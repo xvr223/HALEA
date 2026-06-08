@@ -348,7 +348,7 @@ canvas.curve-edit{width:100%;height:160px;display:block;cursor:crosshair}
   <div class="tb-status"><div class="sdot" id="sdot"></div><span id="stxt">Ready</span></div>
   <div class="tb-sep"></div>
   <div id="creditBadge" onclick="redeemCreditCode()" style="padding:4px 11px;border-radius:5px;border:1px solid var(--b1);font-size:10px;font-weight:700;cursor:pointer;background:rgba(61,216,138,.1);color:var(--ok)">0 credits</div>
-  <button id="apiKeyBtn" style="display:none" onclick="currentUser?.role==='admin'?promptAdminKey():redeemCreditCode()" style="background:none;border:1px solid var(--b1);color:var(--warn);padding:4px 11px;border-radius:5px;font-family:var(--font);font-size:10px;font-weight:700;cursor:pointer;letter-spacing:.04em">🔑 Set Key</button>
+  <button id="apiKeyBtn" onclick="currentUser?.role==='admin'?promptAdminKey():redeemCreditCode()" style="background:none;border:1px solid var(--b1);color:var(--warn);padding:4px 11px;border-radius:5px;font-family:var(--font);font-size:10px;font-weight:700;cursor:pointer;letter-spacing:.04em">🔑 Set Key</button>
   <div class="tb-sep"></div>
   <div class="user-chip" id="userChip" onclick="handleUserChip()">
     <div class="user-av" id="userAv">?</div>
@@ -560,20 +560,24 @@ canvas.curve-edit{width:100%;height:160px;display:block;cursor:crosshair}
 <div class="workspace" id="ws-ai" style="flex-direction:column">
   <div class="ai-chat">
     <div class="chat-history" id="chat-history">
-      <div class="msg system">🤖 HALEA AI — your color grading second brain</div>
-      <div class="msg ai"><strong>Halo!</strong> Gw AI assistant HALEA. Bisa bantu lo soal color grading, film look, LUT, sampe strategi jualan preset. Mau tanya apa? 🎬</div>
+      <div class="msg system">🤖 HALEA AI — powered by Gemini 2.0 Flash (free)</div>
+      <div class="msg ai"><strong>Halo!</strong> Gw HALEA AI, second brain lo untuk color grading. Tanya soal LUT, film look, cara pakai HALEA, atau strategi jualan preset. Butuh setup API key dulu — klik <strong>⚙ Setup AI</strong> di bawah. 🎬</div>
     </div>
     <div class="quick-btns">
       <div class="qbtn" onclick="sendQuick('Apa itu halation dan kenapa bikin film look bagus?')">Apa itu halation?</div>
       <div class="qbtn" onclick="sendQuick('Bedain S-Log2 vs S-Log3, kapan pake masing-masing?')">S-Log2 vs S-Log3</div>
-      <div class="qbtn" onclick="sendQuick('Gimana cara harga preset LUT yang gw jual?')">Strategi harga preset</div>
-      <div class="qbtn" onclick="sendQuick('Recipe color grading buat teal & orange look?')">Teal & Orange recipe</div>
-      <div class="qbtn" onclick="sendQuick('Tips marketing preset pack ke market global?')">Marketing preset</div>
-      <div class="qbtn" onclick="sendQuick('Cara fix footage yang kebanyakan kuning/oranye?')">Fix warna kuning</div>
+      <div class="qbtn" onclick="sendQuick('Recipe color grading buat teal & orange look di Grade Nodes?')">Teal & Orange recipe</div>
+      <div class="qbtn" onclick="sendQuick('Cara apply LUT di Premiere Pro 2025?')">Apply LUT di Premiere</div>
+      <div class="qbtn" onclick="sendQuick('Gimana cara harga preset LUT yang gw jual ke market global?')">Strategi harga preset</div>
+      <div class="qbtn" onclick="sendQuick('Tips color grading footage F-Log2 dari Fujifilm?')">F-Log2 tips</div>
     </div>
     <div class="chat-input-wrap">
-      <textarea class="chat-input" id="chat-input" placeholder="Tanya soal color grading, bisnis preset, atau apapun..." rows="2"></textarea>
-      <div class="chat-actions"><button class="btn btn-ai" style="flex:1" id="chat-send">🤖 Ask HALEA AI</button><button class="btn btn-sm btn-ghost" onclick="clearChat()">Clear</button></div>
+      <textarea class="chat-input" id="chat-input" placeholder="Tanya soal color grading, film look, HALEA, bisnis preset..." rows="2"></textarea>
+      <div class="chat-actions">
+        <button class="btn btn-ai" style="flex:1" id="chat-send">🤖 Ask HALEA AI</button>
+        <button class="btn btn-sm btn-ghost" id="geminiSetupBtn" onclick="setupGeminiKey()" style="border:1px solid var(--b1);color:var(--warn);white-space:nowrap">⚙ Setup AI</button>
+        <button class="btn btn-sm btn-ghost" onclick="clearChat()">Clear</button>
+      </div>
     </div>
   </div>
 </div>
@@ -669,7 +673,7 @@ canvas.curve-edit{width:100%;height:160px;display:block;cursor:crosshair}
             <input type="password" id="admin-api-key" placeholder="sk-ant-..." style="flex:1;font-size:11px;font-family:var(--mono)">
             <button class="btn btn-sm btn-ghost" style="width:auto" onclick="saveAdminKey()">Save</button>
           </div>
-          <p style="font-size:9px;color:var(--t3);margin-top:4px">API key is set on the server (Vercel env var). No action needed.</p>
+          <p style="font-size:9px;color:var(--t3);margin-top:4px">Stored locally. Required for AI Match to work.</p>
         </div>
       </div>
     </div>
@@ -2205,28 +2209,128 @@ document.querySelectorAll('.pmode-btn').forEach(b=>{b.onclick=()=>{halPreviewMod
 window.addEventListener('resize',()=>{if(halImg)halRedraw()});
 
 // ════════════════════════════════════════════════════════════════════════════
-// AI ASSISTANT
+// AI ASSISTANT — Gemini 2.0 Flash (free tier, 1500 req/day)
 // ════════════════════════════════════════════════════════════════════════════
+const GEMINI_MODEL='gemini-2.0-flash';
+let chatHistory=[]; // conversation history for multi-turn
+
+const HALEA_SYSTEM=`Kamu adalah HALEA AI — asisten khusus untuk color grading dan video editing, dibuat untuk web app HALEA by @robbiesatriaa.
+
+Keahlian kamu:
+- Color grading: LUT, log formats, tone curves, color theory, shot matching
+- Software: Premiere Pro, DaVinci Resolve, After Effects, CapCut Pro
+- Film look: halation, grain, film stock emulation, teal & orange, bleach bypass
+- HALEA app: cara pakai LUT Studio, Grade Nodes, Halation Lab, AI Match
+- Bisnis: jualan preset/LUT, pricing strategy, marketing ke global market
+
+Gaya: casual Indonesia, jawaban langsung & actionable, kasih angka/setting konkret kalau bisa. Ga perlu salam panjang. Kalau ada context footage/referensi yang lagi dianalisis, manfaatin itu.`;
+
+function getGeminiKey(){
+  try{return localStorage.getItem('halea_gemini_key')||''}catch(e){return ''}
+}
+function setGeminiKey(k){
+  try{localStorage.setItem('halea_gemini_key',k.trim())}catch(e){}
+}
+
 async function sendAI(msg){
   if(!msg.trim())return;
   const hist=$('chat-history');
+
+  // User bubble
   const ub=document.createElement('div');ub.className='msg user';ub.textContent=msg;hist.appendChild(ub);
-  const tb=document.createElement('div');tb.className='msg ai';tb.innerHTML='<em style="color:var(--t3)">Thinking...</em>';hist.appendChild(tb);hist.scrollTop=hist.scrollHeight;
-  setStatus('AI thinking...','ai');$('chat-send').disabled=true;
-  // context from current analysis
-  let ctx='';if(refAnalysis){ctx=`\n\n[Context: User sedang analisis reference foto dengan mood ${refAnalysis.warmth>0?'warm':'cool'}, contrast ${Math.round(refAnalysis.contrast*100)}%, saturation ${Math.round(refAnalysis.avgSat*100)}%${refAnalysis.hasSkin?', ada skin tone':''}.]`}
+
+  // Thinking bubble
+  const tb=document.createElement('div');tb.className='msg ai';
+  tb.innerHTML='<span style="color:var(--t3);font-size:11px">● thinking...</span>';
+  hist.appendChild(tb);hist.scrollTop=hist.scrollHeight;
+  setStatus('HALEA AI thinking...','ai');$('chat-send').disabled=true;
+
+  // Add context from current LUT analysis if available
+  let fullMsg=msg;
+  if(refAnalysis){
+    fullMsg+=`\n\n[HALEA context: user lagi kerja di LUT Studio. Reference analysis — mood: ${refAnalysis.warmth>0?'warm':'cool'}, contrast: ${Math.round(refAnalysis.contrast*100)}%, saturation: ${Math.round(refAnalysis.avgSat*100)}%${refAnalysis.hasSkin?', skin tone detected':''}. Node stack aktif: ${nodeStack.filter(n=>n.enabled).map(n=>n.type).join(' → ')}]`;
+  }
+
+  // Add to history
+  chatHistory.push({role:'user',parts:[{text:fullMsg}]});
+
+  const key=getGeminiKey();
+  if(!key){
+    tb.innerHTML=`<span style="color:var(--warn)">Set Gemini API key dulu — klik <strong>⚙ Setup AI</strong> di bawah chat.</span>`;
+    setStatus('Ready','ok');$('chat-send').disabled=false;$('chat-input').value='';
+    return;
+  }
+
   try{
-    const res=await fetch('/api/ai',{method:'POST',headers:{'Content-Type':'application/json','anthropic-version':'2023-06-01',},body:JSON.stringify({model:'claude-sonnet-4-20250514',max_tokens:1000,system:`Kamu adalah AI assistant untuk HALEA, web app color grading buatan @robbiesatriaa (creator Indonesia). Kamu second brain yang ahli color grading, LUT, film look, halation, video editing (Premiere/Resolve/AE), DAN strategi bisnis jualan preset/LUT ke market global. Jawab bahasa Indonesia casual, praktis, actionable, ga bertele-tele. Kalau soal teknis kasih angka/setting konkret.`,messages:[{role:'user',content:msg+ctx}]})});
+    const res=await fetch(
+      `https://generativelanguage.googleapis.com/v1beta/models/${GEMINI_MODEL}:generateContent?key=${key}`,
+      {
+        method:'POST',
+        headers:{'Content-Type':'application/json'},
+        body:JSON.stringify({
+          system_instruction:{parts:[{text:HALEA_SYSTEM}]},
+          contents: chatHistory,
+          generationConfig:{maxOutputTokens:1024,temperature:0.7},
+        })
+      }
+    );
+
+    if(!res.ok){
+      const err=await res.json();
+      const msg=err?.error?.message||'Unknown error';
+      if(res.status===400&&msg.includes('API_KEY')){throw new Error('API key Gemini tidak valid')}
+      if(res.status===429){throw new Error('Rate limit — coba lagi sebentar')}
+      throw new Error(`Gemini ${res.status}: ${msg.slice(0,100)}`);
+    }
+
     const data=await res.json();
-    const text=data.content?.map(c=>c.text||'').join('')||'Maaf ada error.';
-    tb.innerHTML=text.replace(/\n/g,'<br>').replace(/\*\*(.*?)\*\*/g,'<strong>$1</strong>');
-  }catch(e){tb.innerHTML='<span style="color:var(--err)">Error: '+(!getApiKey()?'Set API key dulu (tombol 🔑 di kanan atas)':'Cek koneksi internet')+'</span>'}
-  setStatus('Ready','ok');$('chat-send').disabled=false;hist.scrollTop=hist.scrollHeight;$('chat-input').value='';
+    const text=data.candidates?.[0]?.content?.parts?.[0]?.text||'Maaf, ga ada response.';
+
+    // Add assistant reply to history (keep last 10 turns max)
+    chatHistory.push({role:'model',parts:[{text}]});
+    if(chatHistory.length>20)chatHistory=chatHistory.slice(-20);
+
+    // Render with markdown-lite formatting
+    tb.innerHTML=text
+      .replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;')
+      .replace(/\*\*(.*?)\*\*/g,'<strong>$1</strong>')
+      .replace(/\*(.*?)\*/g,'<em>$1</em>')
+      .replace(/`(.*?)`/g,'<code style="background:var(--s3);padding:1px 5px;border-radius:3px;font-family:var(--mono);font-size:10px">$1</code>')
+      .replace(/\n/g,'<br>');
+
+  }catch(e){
+    tb.innerHTML=`<span style="color:var(--err)">Error: ${e.message}</span>`;
+    // Remove last user message from history on error
+    chatHistory.pop();
+  }
+
+  setStatus('Ready','ok');$('chat-send').disabled=false;
+  hist.scrollTop=hist.scrollHeight;$('chat-input').value='';
 }
+
 $('chat-send').onclick=()=>sendAI($('chat-input').value);
 $('chat-input').onkeydown=e=>{if(e.key==='Enter'&&!e.shiftKey){e.preventDefault();sendAI($('chat-input').value)}};
 function sendQuick(m){$('chat-input').value=m;sendAI(m)}
-function clearChat(){$('chat-history').innerHTML='<div class="msg system">Chat cleared</div>'}
+function clearChat(){
+  chatHistory=[];
+  $('chat-history').innerHTML='<div class="msg system">Chat cleared — tanya apa aja soal color grading!</div>';
+}
+function setupGeminiKey(){
+  const existing=getGeminiKey();
+  const k=prompt('Gemini API Key:\n\nDapat gratis di: aistudio.google.com/apikey\nFormat: AIza...',existing||'');
+  if(k!==null&&k.trim()){
+    setGeminiKey(k.trim());
+    updateGeminiUI();
+    showToast('✓ Gemini key saved — AI Chat ready!');
+  }
+}
+function updateGeminiUI(){
+  const has=!!getGeminiKey();
+  const btn=$('geminiSetupBtn');if(!btn)return;
+  btn.textContent=has?'⚙ AI Ready ✓':'⚙ Setup AI';
+  btn.style.color=has?'var(--ok)':'var(--warn)';
+  btn.style.borderColor=has?'rgba(61,216,138,.3)':'var(--b1)';
+}
 
 // ════════════════════════════════════════════════════════════════════════════
 // TOOLS + LESSONS + MODAL  (loaded from app3.js)
@@ -2243,6 +2347,7 @@ window.addEventListener('DOMContentLoaded',async()=>{
   renderNodes();
   updateCreditUI();
   updateApiKeyUI();
+  updateGeminiUI();
   // restore user
   try{const u=localStorage.getItem('halea_user');if(u){currentUser=JSON.parse(u);applyUser()}}catch(e){}
   // seed demo products if empty

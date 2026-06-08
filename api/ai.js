@@ -1,5 +1,5 @@
 // HALEA — AI Proxy (Anthropic for AI Match, Gemini for Chat)
-// API keys stored safely as Vercel env Vars
+// API keys stored safely as Vercel env vars
 
 export default async function handler(req, res) {
   res.setHeader('Access-Control-Allow-Origin', '*');
@@ -10,9 +10,10 @@ export default async function handler(req, res) {
 
   const { provider = 'anthropic', ...body } = req.body;
 
+  // ── Anthropic (AI Match) ──────────────────────────────────────────────────
   if (provider === 'anthropic') {
     const key = process.env.ANTHROPIC_API_KEY;
-    if (!key) return res.status(500).json({ error: 'ANTHROPIC_API_KEY not set in Vercel env Vars' });
+    if (!key) return res.status(500).json({ error: 'ANTHROPIC_API_KEY not set in Vercel env vars' });
     const r = await fetch('https://api.anthropic.com/v1/messages', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json', 'x-api-key': key, 'anthropic-version': '2023-06-01' },
@@ -22,11 +23,15 @@ export default async function handler(req, res) {
     return res.status(r.status).json(data);
   }
 
+  // ── Gemini (AI Chat) ──────────────────────────────────────────────────────
   if (provider === 'gemini') {
     const key = process.env.GEMINI_API_KEY;
-    if (!key) return res.status(500).json({ error: 'GEMINI_API_KEY not set in Vercel env Vars' });
+    if (!key) return res.status(500).json({ error: 'GEMINI_API_KEY not set in Vercel env vars' });
     const { model = 'gemini-2.0-flash', ...geminiBody } = body;
-    const r = await fetch(`https://generativelanguage.googleapis.com/v1beta/models/${model}:generateContent?key=${key}`, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(geminiBody) });
+    const r = await fetch(
+      `https://generativelanguage.googleapis.com/v1beta/models/${model}:generateContent?key=${key}`,
+      { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(geminiBody) }
+    );
     const data = await r.json();
     return res.status(r.status).json(data);
   }
