@@ -1,0 +1,2333 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>HALEA — Cinematic Color, Engineered</title>
+<style>
+@import url('https://fonts.googleapis.com/css2?family=Syne:wght@400;500;600;700;800&family=DM+Mono:wght@400;500&family=Fraunces:ital,opsz,wght@0,9..144,400;0,9..144,600;1,9..144,400&display=swap');
+*,*::before,*::after{box-sizing:border-box;margin:0;padding:0}
+:root{
+  --bg:#0a0a0d;--s1:#0f0f14;--s2:#14141b;--s3:#1b1b24;--s4:#23232e;--s5:#2c2c3a;
+  --b1:#262630;--b2:#34343f;--b3:#444452;
+  --accent:#ff6b35;--a2:#ffd23f;--a3:#3ddfd5;--a4:#b388ff;
+  --aglow:rgba(255,107,53,.22);--aglow2:rgba(255,107,53,.06);
+  --txt:#f2f0ec;--t2:#8e8c98;--t3:#4a4a56;
+  --ok:#3dd88a;--err:#ff5562;--warn:#ffb13f;
+  --font:'Syne',system-ui,sans-serif;--mono:'DM Mono',monospace;--serif:'Fraunces',serif;
+  --r:7px;--r2:11px;--r3:16px;
+}
+html,body{height:100%;overflow:hidden}
+body{background:var(--bg);color:var(--txt);font-family:var(--font);font-size:13px;display:flex;flex-direction:column}
+body::before{content:'';position:fixed;inset:0;pointer-events:none;z-index:9999;opacity:.4;
+  background-image:url("data:image/svg+xml,%3Csvg viewBox='0 0 200 200' xmlns='http://www.w3.org/2000/svg'%3E%3Cfilter id='n'%3E%3CfeTurbulence type='fractalNoise' baseFrequency='0.85' numOctaves='3'/%3E%3C/filter%3E%3Crect width='100%25' height='100%25' filter='url(%23n)' opacity='0.03'/%3E%3C/svg%3E")}
+
+/* ─── TITLEBAR ─── */
+.titlebar{height:52px;background:var(--s1);border-bottom:1px solid var(--b1);display:flex;align-items:center;padding:0 22px;gap:16px;flex-shrink:0;z-index:50}
+.logo{display:flex;align-items:center;gap:11px;cursor:pointer}
+.logo-mark{width:34px;height:34px;background:linear-gradient(135deg,var(--accent),#ff9558);border-radius:9px;display:flex;align-items:center;justify-content:center;box-shadow:0 0 22px var(--aglow);flex-shrink:0}
+.logo-txt{font-family:var(--serif);font-size:22px;font-weight:600;letter-spacing:.04em;line-height:1}
+.logo-txt em{font-style:italic;color:var(--accent)}
+.logo-sub{font-size:8px;color:var(--t3);letter-spacing:.22em;text-transform:uppercase;margin-top:2px;font-family:var(--font);font-weight:600}
+.tb-sep{width:1px;height:22px;background:var(--b1)}
+.tb-sp{flex:1}
+.tb-link{display:flex;align-items:center;gap:6px;font-size:11px;color:var(--t2);text-decoration:none;font-family:var(--mono);transition:color .15s}
+.tb-link:hover{color:var(--accent)}
+.tb-status{display:flex;align-items:center;gap:7px;font-size:10px;color:var(--t3);font-family:var(--mono)}
+.sdot{width:6px;height:6px;border-radius:50%;background:var(--b3);transition:.3s}
+.sdot.ok{background:var(--ok)}.sdot.working{background:var(--warn);animation:pulse 1s infinite}.sdot.ai{background:var(--a4);animation:pulse .8s infinite}
+@keyframes pulse{0%,100%{opacity:1}50%{opacity:.3}}
+.user-chip{display:flex;align-items:center;gap:8px;padding:5px 12px 5px 5px;background:var(--s3);border:1px solid var(--b1);border-radius:30px;cursor:pointer;transition:.15s}
+.user-chip:hover{border-color:var(--b3)}
+.user-av{width:24px;height:24px;border-radius:50%;background:var(--accent);display:flex;align-items:center;justify-content:center;font-size:11px;font-weight:800;color:#000}
+.user-av.admin{background:var(--a2)}
+.user-name{font-size:11px;font-weight:600}
+.user-role{font-size:8px;color:var(--t3);text-transform:uppercase;letter-spacing:.1em}
+
+/* ─── NAV ─── */
+.nav{display:flex;background:var(--s1);border-bottom:1px solid var(--b1);flex-shrink:0;padding:0 22px;gap:2px;align-items:center}
+.ntab{padding:11px 16px;font-size:10px;font-weight:700;letter-spacing:.09em;text-transform:uppercase;color:var(--t3);cursor:pointer;border-bottom:2px solid transparent;transition:.15s;white-space:nowrap;display:flex;align-items:center;gap:6px}
+.ntab:hover{color:var(--t2)}
+.ntab.active{color:var(--accent);border-bottom-color:var(--accent)}
+.ntab .nb{font-size:7px;padding:1px 5px;border-radius:3px;background:var(--accent);color:#000;font-weight:800;letter-spacing:.05em}
+.ntab.admin-only{display:none}
+.ntab.admin-only.show{display:flex}
+.nav-sp{flex:1}
+
+/* ─── WORKSPACE ─── */
+.workspace{flex:1;overflow:hidden;display:none}
+.workspace.active{display:flex}
+.panel{display:flex;flex-direction:column;overflow:hidden;border-right:1px solid var(--b1);flex-shrink:0}
+.panel:last-child{border-right:none}
+.panel.flex{flex:1}
+.ph{height:38px;background:var(--s1);border-bottom:1px solid var(--b1);display:flex;align-items:center;padding:0 15px;gap:8px;flex-shrink:0}
+.ph-title{font-size:9px;letter-spacing:.13em;color:var(--t2);text-transform:uppercase;font-weight:700}
+.ph-badge{margin-left:auto;font-size:8px;padding:2px 8px;border-radius:3px;letter-spacing:.08em;font-weight:700}
+.badge-ok{background:rgba(61,216,138,.13);color:var(--ok);border:1px solid rgba(61,216,138,.27)}
+.badge-ai{background:rgba(179,136,255,.13);color:var(--a4);border:1px solid rgba(179,136,255,.27)}
+.badge-idle{background:var(--s3);color:var(--t3);border:1px solid var(--b1)}
+.pscroll{flex:1;overflow-y:auto;overflow-x:hidden;padding:15px}
+.pscroll::-webkit-scrollbar{width:3px}.pscroll::-webkit-scrollbar-thumb{background:var(--b2);border-radius:2px}
+
+/* ─── SECTIONS ─── */
+.sec-hd{font-size:9px;font-weight:700;letter-spacing:.11em;text-transform:uppercase;color:var(--t3);margin:18px 0 9px;display:flex;align-items:center;gap:7px}
+.sec-hd:first-child{margin-top:0}
+.sec-hd::after{content:'';flex:1;height:1px;background:var(--b1)}
+.sec-hd.hot{color:var(--accent)}
+
+/* ─── FORMS ─── */
+.field{margin-bottom:13px}
+.lbl{font-size:9px;letter-spacing:.1em;color:var(--t3);text-transform:uppercase;margin-bottom:6px;display:block;font-weight:700}
+select,input[type=text],input[type=password],input[type=number],input[type=email],textarea{width:100%;background:var(--s2);border:1px solid var(--b1);color:var(--txt);padding:9px 11px;border-radius:var(--r);font-family:var(--font);font-size:12px;outline:none}
+select:focus,input:focus,textarea:focus{border-color:var(--accent)}
+select option{background:var(--s2)}
+textarea{resize:vertical;min-height:70px;line-height:1.6}
+
+/* ─── SLIDERS ─── */
+.sw{display:flex;align-items:center;gap:9px;margin-bottom:9px}
+.sn{font-size:10px;color:var(--t2);width:84px;flex-shrink:0;font-weight:500}
+.sv{font-size:10px;color:var(--accent);width:40px;text-align:right;flex-shrink:0;font-family:var(--mono);font-weight:500}
+input[type=range]{flex:1;-webkit-appearance:none;height:3px;background:linear-gradient(to right,var(--accent) var(--fill,50%),var(--b2) var(--fill,50%));border-radius:2px;outline:none;cursor:pointer}
+input[type=range]::-webkit-slider-thumb{-webkit-appearance:none;width:13px;height:13px;border-radius:50%;background:var(--txt);border:2px solid var(--accent);cursor:pointer;transition:box-shadow .1s}
+input[type=range]::-webkit-slider-thumb:hover{box-shadow:0 0 0 4px var(--aglow)}
+
+/* ─── DROPZONES ─── */
+.dz{border:1px dashed var(--b2);border-radius:var(--r2);padding:26px 16px;text-align:center;cursor:pointer;position:relative;background:var(--s2);transition:.2s;margin-bottom:13px}
+.dz:hover,.dz.drag{border-color:var(--accent);background:var(--aglow2)}
+.dz input{position:absolute;inset:0;opacity:0;cursor:pointer;width:100%;height:100%}
+.dz-icon{font-size:27px;margin-bottom:7px;color:var(--t3);display:block}
+.dz-lbl{font-size:11px;color:var(--t2);letter-spacing:.04em;font-weight:600}
+.dz-sub{font-size:9px;color:var(--t3);margin-top:3px;letter-spacing:.04em}
+.img-thumb{width:100%;border-radius:var(--r);display:block;margin-bottom:11px;object-fit:cover;max-height:160px;border:1px solid var(--b1)}
+
+/* ─── BUTTONS ─── */
+.btn{width:100%;padding:11px;border:none;border-radius:var(--r);font-family:var(--font);font-size:12px;font-weight:700;letter-spacing:.06em;cursor:pointer;text-transform:uppercase;transition:.15s}
+.btn-accent{background:var(--accent);color:#fff;box-shadow:0 3px 14px var(--aglow)}
+.btn-accent:hover:not(:disabled){background:#ff8050;transform:translateY(-1px);box-shadow:0 5px 20px var(--aglow)}
+.btn-ai{background:var(--a4);color:#000}.btn-ai:hover:not(:disabled){background:#c4a0ff;transform:translateY(-1px)}
+.btn-gold{background:var(--a2);color:#000}.btn-gold:hover:not(:disabled){background:#ffdb5f;transform:translateY(-1px)}
+.btn:disabled{background:var(--s4);color:var(--t3);cursor:not-allowed;transform:none;box-shadow:none}
+.btn-sm{padding:7px 12px;width:auto;font-size:10px}
+.btn-ghost{background:var(--s3);border:1px solid var(--b1);color:var(--t2)}
+.btn-ghost:hover{background:var(--s4);color:var(--txt)}
+.btn-row{display:flex;gap:6px;margin-top:8px}
+
+/* ─── PROGRESS ─── */
+.prog-wrap{margin:11px 0 2px}
+.prog-bar{height:2px;background:var(--s3);border-radius:2px;overflow:hidden}
+.prog-fill{height:100%;background:linear-gradient(90deg,var(--accent),var(--a3));width:0%;transition:.4s}
+.prog-st{font-size:9px;color:var(--t2);margin-top:5px;letter-spacing:.04em;min-height:14px;font-family:var(--mono)}
+
+/* ─── PALETTE ─── */
+.palette{display:flex;gap:4px;flex-wrap:wrap;margin-bottom:11px}
+.sw-swatch{width:24px;height:24px;border-radius:4px;cursor:pointer;border:1px solid rgba(255,255,255,.08);transition:transform .1s}
+.sw-swatch:hover{transform:scale(1.25);z-index:10}
+
+/* analysis card */
+.analysis-card{background:var(--s2);border:1px solid var(--b1);border-radius:var(--r);padding:11px 13px;margin-bottom:13px;font-size:10px;line-height:1.9;color:var(--t2);font-family:var(--mono)}
+.analysis-card .ar{display:flex;justify-content:space-between}
+.analysis-card .ar span:last-child{color:var(--accent)}
+.zone-bars{display:flex;gap:4px;margin:8px 0}
+.zone-bar{flex:1;height:30px;border-radius:4px;border:1px solid var(--b1)}
+
+/* ─── CTABS ─── */
+.ctabs{display:flex;background:var(--s1);border-bottom:1px solid var(--b1);flex-shrink:0}
+.ctab{flex:1;padding:9px 6px;text-align:center;font-size:9px;letter-spacing:.08em;cursor:pointer;color:var(--t3);text-transform:uppercase;border-bottom:2px solid transparent;transition:.15s;font-weight:700}
+.ctab.active{color:var(--accent);border-bottom-color:var(--accent);background:var(--bg)}
+.ct-body{flex:1;overflow:hidden;display:flex;flex-direction:column;min-height:0}
+.ct-pane{display:none;flex:1;overflow:auto;padding:14px;flex-direction:column;gap:10px}
+.ct-pane.active{display:flex}
+
+/* ─── CANVAS / SPLIT ─── */
+.compare-grid{display:grid;grid-template-columns:1fr 1fr;gap:10px;flex:1;min-height:0}
+.compare-side{display:flex;flex-direction:column;gap:5px;min-height:0}
+.compare-canvas{width:100%;border-radius:var(--r);object-fit:contain;background:var(--s3);border:1px solid var(--b1);display:block;max-height:340px}
+.clabel{font-size:8px;letter-spacing:.1em;color:var(--t3);text-align:center;text-transform:uppercase;font-weight:700}
+.split-wrap{position:relative;border-radius:var(--r2);overflow:hidden;background:var(--s3);flex:1;min-height:200px;max-height:430px;cursor:col-resize;user-select:none}
+.split-canvas{width:100%;height:100%;object-fit:contain;display:block}
+.split-bar{position:absolute;top:0;bottom:0;left:50%;width:2px;background:#fff;z-index:10;transform:translateX(-50%)}
+.split-handle{position:absolute;top:50%;left:50%;transform:translate(-50%,-50%);width:28px;height:28px;border-radius:50%;background:#fff;box-shadow:0 2px 10px rgba(0,0,0,.5);display:flex;align-items:center;justify-content:center;font-size:11px;font-weight:800;color:#333}
+.no-state{flex:1;display:flex;align-items:center;justify-content:center;flex-direction:column;gap:12px;color:var(--t3);padding:30px}
+.no-state .ni{font-size:40px;opacity:.2}
+.no-state p{font-size:10px;letter-spacing:.06em;text-align:center;line-height:2}
+
+/* ─── META / DL ─── */
+.meta-box{background:var(--s2);border:1px solid var(--b1);border-radius:var(--r);overflow:hidden;margin-bottom:12px}
+.meta-row{display:flex;justify-content:space-between;align-items:center;padding:7px 12px;border-bottom:1px solid var(--b1);font-size:10px}
+.meta-row:last-child{border-bottom:none}
+.mk{color:var(--t2)}.mv{color:var(--accent);font-family:var(--mono);font-size:9px;font-weight:500}
+.dl-grid{display:grid;grid-template-columns:repeat(3,1fr);gap:5px;margin-bottom:12px}
+.dl-card{background:var(--s2);border:1px solid var(--b1);border-radius:var(--r);padding:10px 6px;text-align:center;cursor:pointer;transition:.15s}
+.dl-card:hover{border-color:var(--accent);background:var(--s3)}
+.dl-card.disabled{opacity:.3;cursor:not-allowed;pointer-events:none}
+.dl-ext{font-size:15px;font-weight:800;color:var(--txt);display:block}
+.dl-app{font-size:8px;color:var(--t3);margin-top:3px;line-height:1.5}
+.how-to{background:var(--s2);border:1px solid var(--b1);border-radius:var(--r);padding:12px;font-size:10px;color:var(--t2);line-height:1.8;margin-bottom:12px}
+.how-to strong{color:var(--txt);display:block;margin:8px 0 2px;font-size:11px}
+.how-to strong:first-child{margin-top:0}
+
+/* ─── CHIPS / TOGGLES ─── */
+.preset-row,.tgl-row{display:flex;flex-wrap:wrap;gap:5px;margin-bottom:12px}
+.pchip{padding:5px 12px;border-radius:20px;border:1px solid var(--b1);background:var(--s2);font-size:10px;font-weight:700;color:var(--t2);cursor:pointer;transition:.15s}
+.pchip:hover{border-color:var(--accent);color:var(--txt)}
+.pchip.active{background:var(--accent);border-color:var(--accent);color:#fff}
+.tgl{padding:4px 10px;border-radius:20px;border:1px solid var(--b1);background:var(--s2);font-size:9px;font-weight:700;color:var(--t3);cursor:pointer;transition:.15s;letter-spacing:.06em}
+.tgl.on{background:var(--aglow2);border-color:rgba(255,107,53,.4);color:var(--accent)}
+
+/* ─── CURVES/HIST ─── */
+.curve-wrap{background:var(--s2);border:1px solid var(--b1);border-radius:var(--r);overflow:hidden;margin-bottom:10px}
+canvas.curve-c{width:100%;height:180px;display:block}
+canvas.hist-c{width:100%;height:70px;display:block;background:var(--s3)}
+.curve-legend{display:flex;gap:12px;padding:7px 12px;border-top:1px solid var(--b1)}
+.cl{display:flex;align-items:center;gap:5px;font-size:9px;color:var(--t2)}
+.cl-bar{width:10px;height:3px;border-radius:2px}
+
+/* ─── AI CHAT ─── */
+.ai-chat{display:flex;flex-direction:column;height:100%;max-width:900px;margin:0 auto;width:100%}
+.chat-history{flex:1;overflow-y:auto;padding:18px;display:flex;flex-direction:column;gap:11px}
+.chat-history::-webkit-scrollbar{width:3px}.chat-history::-webkit-scrollbar-thumb{background:var(--b2)}
+.msg{padding:11px 15px;border-radius:var(--r2);font-size:12px;line-height:1.7;max-width:88%}
+.msg.user{background:var(--s4);border:1px solid var(--b2);align-self:flex-end}
+.msg.ai{background:rgba(179,136,255,.09);border:1px solid rgba(179,136,255,.18);align-self:flex-start}
+.msg.ai strong{color:var(--a4)}
+.msg.system{background:var(--s2);border:1px solid var(--b1);align-self:center;color:var(--t2);font-size:10px;text-align:center;max-width:100%}
+.quick-btns{display:flex;flex-wrap:wrap;gap:5px;padding:0 18px 10px}
+.qbtn{font-size:9px;padding:4px 10px;border-radius:20px;border:1px solid var(--b2);background:var(--s2);color:var(--t2);cursor:pointer;transition:.15s;font-weight:600;letter-spacing:.04em}
+.qbtn:hover{border-color:var(--a4);color:var(--a4)}
+.chat-input-wrap{padding:13px 18px;border-top:1px solid var(--b1);display:flex;flex-direction:column;gap:8px;background:var(--s1)}
+.chat-input{width:100%;background:var(--s2);border:1px solid var(--b1);color:var(--txt);padding:11px 13px;border-radius:var(--r);font-family:var(--font);font-size:12px;outline:none;resize:none;min-height:56px;max-height:120px;line-height:1.6}
+.chat-input:focus{border-color:var(--a4)}
+.chat-actions{display:flex;gap:6px}
+
+/* ─── SHOP ─── */
+.shop-wrap{flex:1;overflow-y:auto;padding:24px}
+.shop-hero{max-width:1100px;margin:0 auto 28px;text-align:center;padding:30px 0}
+.shop-hero h1{font-family:var(--serif);font-size:42px;font-weight:600;margin-bottom:10px;letter-spacing:.01em}
+.shop-hero h1 em{font-style:italic;color:var(--accent)}
+.shop-hero p{font-size:13px;color:var(--t2);max-width:480px;margin:0 auto;line-height:1.7}
+.shop-filters{max-width:1100px;margin:0 auto 18px;display:flex;gap:8px;align-items:center;flex-wrap:wrap}
+.shop-grid{max-width:1100px;margin:0 auto;display:grid;grid-template-columns:repeat(auto-fill,minmax(240px,1fr));gap:16px}
+.product-card{background:var(--s2);border:1px solid var(--b1);border-radius:var(--r2);overflow:hidden;transition:.2s;cursor:pointer}
+.product-card:hover{border-color:var(--b3);transform:translateY(-3px);box-shadow:0 10px 30px rgba(0,0,0,.3)}
+.pc-thumb{width:100%;height:160px;object-fit:cover;background:var(--s3);display:block;position:relative}
+.pc-thumb-ph{width:100%;height:160px;display:flex;align-items:center;justify-content:center;font-size:36px;background:linear-gradient(135deg,var(--s3),var(--s4))}
+.pc-body{padding:14px}
+.pc-type{font-size:8px;letter-spacing:.1em;text-transform:uppercase;font-weight:700;color:var(--accent);margin-bottom:5px}
+.pc-name{font-size:14px;font-weight:700;margin-bottom:4px}
+.pc-desc{font-size:10px;color:var(--t2);line-height:1.5;margin-bottom:10px;min-height:30px}
+.pc-foot{display:flex;align-items:center;justify-content:between;gap:8px}
+.pc-price{font-family:var(--mono);font-size:14px;font-weight:700;color:var(--a2)}
+.pc-price.free{color:var(--ok)}
+.pc-btn{margin-left:auto;padding:6px 14px;border-radius:20px;background:var(--accent);color:#fff;border:none;font-family:var(--font);font-size:10px;font-weight:700;cursor:pointer;text-transform:uppercase;letter-spacing:.05em;transition:.15s}
+.pc-btn:hover{background:#ff8050}
+.pc-badge{position:absolute;top:8px;right:8px;padding:3px 8px;border-radius:20px;font-size:8px;font-weight:800;letter-spacing:.06em;text-transform:uppercase}
+.pc-badge.free{background:var(--ok);color:#000}
+.pc-badge.pro{background:var(--a2);color:#000}
+
+/* ─── MODAL ─── */
+.modal-overlay{position:fixed;inset:0;background:rgba(0,0,0,.82);z-index:200;display:none;align-items:center;justify-content:center;padding:20px;backdrop-filter:blur(4px)}
+.modal-overlay.open{display:flex}
+.modal{background:var(--s2);border:1px solid var(--b2);border-radius:var(--r2);max-width:560px;width:100%;max-height:84vh;display:flex;flex-direction:column}
+.modal.sm{max-width:400px}
+.modal-head{display:flex;align-items:center;justify-content:space-between;padding:16px 20px;border-bottom:1px solid var(--b1)}
+.modal-title{font-size:15px;font-weight:800}
+.modal-close{background:none;border:none;color:var(--t2);font-size:18px;cursor:pointer}
+.modal-close:hover{color:var(--txt)}
+.modal-body{flex:1;overflow-y:auto;padding:20px;line-height:1.8;font-size:12px;color:var(--t2)}
+.modal-body h3{font-size:13px;color:var(--txt);margin:16px 0 6px;font-weight:700}
+.modal-body h3:first-child{margin-top:0}
+.modal-body ul{padding-left:16px;margin-bottom:10px}.modal-body li{margin-bottom:4px}
+.modal-body code{background:var(--s3);padding:1px 6px;border-radius:3px;font-family:var(--mono);font-size:11px;color:var(--a2)}
+.modal-body .tip{background:var(--aglow2);border:1px solid rgba(255,107,53,.2);border-radius:var(--r);padding:10px 12px;margin:10px 0;font-size:11px;color:var(--accent)}
+.modal-foot{padding:14px 20px;border-top:1px solid var(--b1);display:flex;justify-content:flex-end;gap:8px}
+
+/* login */
+.login-box{max-width:360px;width:100%;text-align:center}
+.login-box .lmark{width:56px;height:56px;border-radius:14px;background:linear-gradient(135deg,var(--accent),#ff9558);display:flex;align-items:center;justify-content:center;margin:0 auto 18px;box-shadow:0 0 30px var(--aglow)}
+.login-box h2{font-family:var(--serif);font-size:26px;font-weight:600;margin-bottom:6px}
+.login-box p{font-size:11px;color:var(--t2);margin-bottom:22px}
+
+/* ─── TOOLS / LESSONS ─── */
+.tools-grid{display:grid;grid-template-columns:repeat(auto-fill,minmax(220px,1fr));gap:10px;max-width:1000px}
+.tool-card{background:var(--s2);border:1px solid var(--b1);border-radius:var(--r2);padding:15px;cursor:pointer;transition:.2s}
+.tool-card:hover{border-color:var(--b3);background:var(--s3);transform:translateY(-1px)}
+.tc-icon{font-size:24px;margin-bottom:8px;display:block}
+.tc-name{font-size:12px;font-weight:700;margin-bottom:4px}
+.tc-desc{font-size:10px;color:var(--t2);line-height:1.5}
+.tc-badge{font-size:8px;padding:2px 6px;border-radius:3px;margin-top:8px;display:inline-block;font-weight:700;letter-spacing:.06em}
+.lesson-list{display:flex;flex-direction:column;gap:8px;max-width:680px}
+.lesson{background:var(--s2);border:1px solid var(--b1);border-radius:var(--r2);padding:14px 16px;cursor:pointer;transition:.15s;display:flex;align-items:center;gap:12px}
+.lesson:hover{border-color:var(--b3);background:var(--s3)}
+.lesson.done{border-color:rgba(61,216,138,.3);background:rgba(61,216,138,.04)}
+.l-num{width:28px;height:28px;border-radius:50%;background:var(--s4);border:1px solid var(--b2);display:flex;align-items:center;justify-content:center;font-size:11px;font-weight:800;color:var(--t2);flex-shrink:0}
+.lesson.done .l-num{background:rgba(61,216,138,.2);border-color:rgba(61,216,138,.4);color:var(--ok)}
+.l-info{flex:1}.l-title{font-size:12px;font-weight:700;margin-bottom:2px}.l-sub{font-size:10px;color:var(--t2)}
+.l-tag{font-size:8px;padding:2px 7px;border-radius:3px;font-weight:700;letter-spacing:.06em}
+
+/* admin */
+.admin-grid{max-width:900px;margin:0 auto;display:grid;grid-template-columns:1fr 1fr;gap:20px}
+.admin-card{background:var(--s2);border:1px solid var(--b1);border-radius:var(--r2);padding:20px}
+.admin-card h3{font-size:13px;font-weight:700;margin-bottom:14px;display:flex;align-items:center;gap:8px}
+.stat-row{display:grid;grid-template-columns:repeat(3,1fr);gap:10px;max-width:900px;margin:0 auto 20px}
+.stat-box{background:var(--s2);border:1px solid var(--b1);border-radius:var(--r2);padding:18px;text-align:center}
+.stat-num{font-family:var(--mono);font-size:28px;font-weight:700;color:var(--accent)}
+.stat-lbl{font-size:9px;color:var(--t3);text-transform:uppercase;letter-spacing:.1em;margin-top:4px}
+.admin-list{display:flex;flex-direction:column;gap:6px;margin-top:12px;max-height:300px;overflow-y:auto}
+.admin-item{display:flex;align-items:center;gap:10px;padding:8px 10px;background:var(--s3);border-radius:var(--r);font-size:11px}
+.admin-item .ai-del{margin-left:auto;background:none;border:none;color:var(--err);cursor:pointer;font-size:14px}
+
+/* ─── TOAST ─── */
+.toast{position:fixed;bottom:20px;left:50%;transform:translateX(-50%) translateY(80px);background:var(--ok);color:#0a1a10;padding:10px 22px;border-radius:30px;font-size:11px;font-weight:700;z-index:500;transition:transform .3s cubic-bezier(.34,1.56,.64,1);letter-spacing:.04em;pointer-events:none}
+.toast.show{transform:translateX(-50%) translateY(0)}
+
+.footage-dz{border:1px dashed var(--b2);border-radius:var(--r2);padding:18px;text-align:center;cursor:pointer;position:relative;background:var(--s2);transition:.2s}
+.footage-dz:hover,.footage-dz.drag{border-color:var(--a3);background:rgba(61,223,213,.05)}
+.footage-dz input{position:absolute;inset:0;opacity:0;cursor:pointer;width:100%;height:100%}
+
+/* ─── NODE STACK ─── */
+.node-stack{display:flex;flex-direction:column;gap:6px;margin-bottom:10px}
+.node{background:var(--s2);border:1px solid var(--b1);border-radius:var(--r);overflow:hidden;transition:.15s}
+.node.active{border-color:var(--accent)}
+.node.disabled{opacity:.5}
+.node-head{display:flex;align-items:center;gap:8px;padding:9px 11px;cursor:pointer;user-select:none}
+.node-head:hover{background:var(--s3)}
+.node-dot{width:7px;height:7px;border-radius:50%;background:var(--accent);flex-shrink:0}
+.node.disabled .node-dot{background:var(--t3)}
+.node-icon{font-size:13px}
+.node-name{font-size:11px;font-weight:700;flex:1}
+.node-toggle{width:28px;height:16px;border-radius:10px;background:var(--b2);position:relative;cursor:pointer;transition:.15s;flex-shrink:0}
+.node-toggle.on{background:var(--accent)}
+.node-toggle::after{content:'';position:absolute;top:2px;left:2px;width:12px;height:12px;border-radius:50%;background:#fff;transition:.15s}
+.node-toggle.on::after{left:14px}
+.node-arrows{display:flex;flex-direction:column;gap:1px}
+.node-arrow{font-size:8px;color:var(--t3);cursor:pointer;line-height:1;padding:1px}
+.node-arrow:hover{color:var(--accent)}
+.node-del{color:var(--err);font-size:13px;cursor:pointer;opacity:.6}
+.node-del:hover{opacity:1}
+.node-body{padding:0 11px 11px;display:none;flex-direction:column;gap:8px;border-top:1px solid var(--b1);padding-top:10px}
+.node.expanded .node-body{display:flex}
+.node-add-row{display:flex;flex-wrap:wrap;gap:5px;margin-bottom:10px}
+.node-add{font-size:9px;padding:5px 10px;border-radius:20px;border:1px dashed var(--b2);background:transparent;color:var(--t2);cursor:pointer;transition:.15s;font-family:var(--font);font-weight:700;letter-spacing:.04em}
+.node-add:hover{border-color:var(--accent);color:var(--accent);border-style:solid}
+
+/* curve editor */
+.curve-editor{background:var(--s3);border:1px solid var(--b1);border-radius:var(--r);overflow:hidden}
+.curve-tabs{display:flex;border-bottom:1px solid var(--b1)}
+.curve-tab{flex:1;padding:5px;text-align:center;font-size:9px;font-weight:700;color:var(--t3);cursor:pointer;border-bottom:2px solid transparent}
+.curve-tab.active{color:var(--accent);border-bottom-color:var(--accent)}
+.curve-tab[data-ch="r"].active{color:#ff4455;border-bottom-color:#ff4455}
+.curve-tab[data-ch="g"].active{color:#44dd66;border-bottom-color:#44dd66}
+.curve-tab[data-ch="b"].active{color:#4488ff;border-bottom-color:#4488ff}
+.curve-canvas-wrap{position:relative}
+canvas.curve-edit{width:100%;height:160px;display:block;cursor:crosshair}
+.curve-hint{font-size:8px;color:var(--t3);text-align:center;padding:4px;font-family:var(--mono)}
+.hue-presets{display:flex;flex-wrap:wrap;gap:4px}
+.hue-preset{font-size:8px;padding:3px 8px;border-radius:12px;border:1px solid var(--b1);background:var(--s3);color:var(--t2);cursor:pointer;font-weight:700}
+.hue-preset:hover{border-color:var(--accent);color:var(--accent)}
+</style>
+</head>
+<body>
+
+<!-- TITLEBAR -->
+<div class="titlebar">
+  <div class="logo" onclick="goTab('lut')">
+    <div class="logo-mark">
+      <svg width="20" height="20" viewBox="0 0 20 20"><circle cx="10" cy="10" r="3" fill="white"/><circle cx="10" cy="10" r="6.5" fill="none" stroke="white" stroke-width="1" opacity=".55"/><circle cx="10" cy="10" r="9" fill="none" stroke="white" stroke-width=".5" opacity=".25"/></svg>
+    </div>
+    <div>
+      <div class="logo-txt">HAL<em>E</em>A</div>
+      <div class="logo-sub">Cinematic Color, Engineered</div>
+    </div>
+  </div>
+  <div class="tb-sep"></div>
+  <a href="https://instagram.com/robbiesatriaa" target="_blank" class="tb-link">
+    <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="2" y="2" width="20" height="20" rx="5"/><circle cx="12" cy="12" r="4"/><circle cx="17.5" cy="6.5" r="1.5" fill="currentColor" stroke="none"/></svg>
+    @robbiesatriaa
+  </a>
+  <div class="tb-sp"></div>
+  <div class="tb-status"><div class="sdot" id="sdot"></div><span id="stxt">Ready</span></div>
+  <div class="tb-sep"></div>
+  <div id="creditBadge" onclick="redeemCreditCode()" style="padding:4px 11px;border-radius:5px;border:1px solid var(--b1);font-size:10px;font-weight:700;cursor:pointer;background:rgba(61,216,138,.1);color:var(--ok)">0 credits</div>
+  <button id="apiKeyBtn" style="display:none" onclick="currentUser?.role==='admin'?promptAdminKey():redeemCreditCode()" style="background:none;border:1px solid var(--b1);color:var(--warn);padding:4px 11px;border-radius:5px;font-family:var(--font);font-size:10px;font-weight:700;cursor:pointer;letter-spacing:.04em">🔑 Set Key</button>
+  <div class="tb-sep"></div>
+  <div class="user-chip" id="userChip" onclick="handleUserChip()">
+    <div class="user-av" id="userAv">?</div>
+    <div><div class="user-name" id="userName">Guest</div><div class="user-role" id="userRole">Not signed in</div></div>
+  </div>
+</div>
+
+<!-- NAV -->
+<div class="nav">
+  <div class="ntab active" data-ws="lut">🎞 LUT Studio</div>
+  <div class="ntab" data-ws="halation">✦ Halation Lab</div>
+  <div class="ntab" data-ws="ai">🤖 AI Assistant <span class="nb">AI</span></div>
+  <div class="ntab" data-ws="shop">🛍 Shop</div>
+  <div class="ntab" data-ws="tools">🛠 Tools</div>
+  <div class="ntab" data-ws="learn">📚 Learn</div>
+  <div class="nav-sp"></div>
+  <div class="ntab admin-only" data-ws="admin">⚙ Admin <span class="nb">ADMIN</span></div>
+</div>
+
+<!-- ═══ LUT STUDIO ═══ -->
+<div class="workspace active" id="ws-lut">
+  <div class="panel" style="width:310px">
+    <div class="ph"><span class="ph-title">📷 Reference</span><span class="ph-badge badge-idle" id="refBadge">No file</span></div>
+    <div class="pscroll">
+      <div class="dz" id="refZone"><input type="file" id="refFile" accept="image/*"><span class="dz-icon">🖼</span><div class="dz-lbl">Drop reference photo</div><div class="dz-sub">JPG · PNG · WEBP</div></div>
+      <img id="refPreview" class="img-thumb" style="display:none" alt="">
+      <canvas id="refCanvas" style="display:none"></canvas>
+      <div id="analysisWrap" style="display:none">
+        <span class="lbl">AI Analysis</span>
+        <div class="analysis-card" id="analysisCard"></div>
+        <span class="lbl">Extracted Palette</span>
+        <div class="palette" id="palette"></div>
+      </div>
+      <div class="field"><span class="lbl">Log Format (Source)</span>
+        <select id="logFormat">
+          <option value="none">Rec.709 / SDR (no log)</option>
+          <optgroup label="Sony"><option value="slog2">S-Log2</option><option value="slog3">S-Log3</option></optgroup>
+          <optgroup label="Fujifilm"><option value="flog">F-Log</option><option value="flog2">F-Log2</option></optgroup>
+          <optgroup label="DJI"><option value="dlog">D-Log</option><option value="dlogm">D-Log M</option></optgroup>
+          <optgroup label="Apple"><option value="iphone">Apple Log</option></optgroup>
+          <optgroup label="Canon"><option value="clog2">C-Log2</option><option value="clog3">C-Log3</option></optgroup>
+          <optgroup label="Panasonic"><option value="vlog">V-Log</option></optgroup>
+          <optgroup label="ARRI"><option value="log3g10">LogC3</option></optgroup>
+        </select>
+      </div>
+      <div class="field"><span class="lbl">Target Color Space</span><select id="targetGamut"><option value="rec709">Rec.709 (Standard)</option><option value="rec2020">Rec.2020 (HDR)</option><option value="p3">DCI-P3 (Cinema)</option></select></div>
+      <div class="field"><span class="lbl">Look / Style</span><select id="lookStyle">
+        <option value="faithful">Faithful — match reference</option>
+        <option value="cinematic">Cinematic — punchy, lifted</option>
+        <option value="teal_orange">Teal & Orange — blockbuster</option>
+        <option value="warm">Warm — golden tones</option>
+        <option value="cool">Cool — teal shadows</option>
+        <option value="bleach">Bleach Bypass</option>
+        <option value="vintage">Vintage — faded film</option>
+        <option value="moody">Moody — desaturated drama</option>
+        <option value="natural">Natural — clean balance</option>
+      </select></div>
+      <div class="field"><span class="lbl">LUT Size</span><select id="lutSize"><option value="17">17³ — Fast</option><option value="33" selected>33³ — Standard</option><option value="65">65³ — Precise</option></select></div>
+      <button class="btn btn-ai" style="width:100%;margin-bottom:6px" id="autoMatchBtn" disabled>🤖 AI Match from Reference</button>
+      <div class="sec-hd hot">⬢ Grade Nodes</div>
+      <div class="node-add-row" id="node-add-row">
+        <button class="node-add" data-add="primary">+ Primary</button>
+        <button class="node-add" data-add="curves">+ Curves</button>
+        <button class="node-add" data-add="hsl">+ HSL</button>
+        <button class="node-add" data-add="look">+ Look</button>
+        <button class="node-add" data-add="halation">+ Halation</button>
+      </div>
+      <div class="node-stack" id="node-stack"></div>
+
+      <button class="btn btn-accent" id="genBtn" disabled>⚡ Bake LUT</button>
+      <div class="prog-wrap"><div class="prog-bar"><div class="prog-fill" id="progFill"></div></div><div class="prog-st" id="progSt">Upload a reference photo to begin</div></div>
+    </div>
+  </div>
+  <div class="panel flex">
+    <div class="ctabs"><div class="ctab active" data-tab="preview">Preview</div><div class="ctab" data-tab="curves">Curves</div><div class="ctab" data-tab="histogram">Scopes</div></div>
+    <div class="ct-body">
+      <div class="ct-pane active" id="ct-preview">
+        <div class="footage-dz" id="footageZone"><input type="file" id="footageFile" accept="image/*"><div style="font-size:10px;color:var(--t3);letter-spacing:.06em">📽 Drop footage still — preview LUT applied</div></div>
+        <canvas id="footageCanvas" style="display:none"></canvas>
+        <div class="no-state" id="noFootage"><div class="ni">🎬</div><p>Generate a LUT, then upload<br>a still frame to preview</p></div>
+        <div class="compare-grid" id="compareRow" style="display:none">
+          <div class="compare-side"><canvas id="beforeCanvas" class="compare-canvas"></canvas><div class="clabel">Before</div></div>
+          <div class="compare-side"><canvas id="afterCanvas" class="compare-canvas"></canvas><div class="clabel">After — LUT</div></div>
+        </div>
+      </div>
+      <div class="ct-pane" id="ct-curves">
+        <div class="curve-wrap"><canvas class="curve-c" id="curveCanvas"></canvas><div class="curve-legend"><div class="cl"><div class="cl-bar" style="background:#ff4455"></div>R</div><div class="cl"><div class="cl-bar" style="background:#44dd66"></div>G</div><div class="cl"><div class="cl-bar" style="background:#4488ff"></div>B</div><div class="cl"><div class="cl-bar" style="background:#8888a8"></div>Luma</div></div></div>
+        <div style="text-align:center;padding:20px;color:var(--t3);font-size:10px" id="curveEmpty">Generate a LUT to see tone curves</div>
+      </div>
+      <div class="ct-pane" id="ct-histogram">
+        <div><span class="lbl">Reference Histogram</span><div class="curve-wrap"><canvas class="hist-c" id="histRefCanvas"></canvas></div></div>
+        <div id="histFootWrap" style="display:none"><span class="lbl">Footage — Before</span><div class="curve-wrap"><canvas class="hist-c" id="histFootCanvas"></canvas></div></div>
+        <div id="histAfterWrap" style="display:none"><span class="lbl">Footage — After</span><div class="curve-wrap"><canvas class="hist-c" id="histAfterCanvas"></canvas></div></div>
+      </div>
+    </div>
+  </div>
+  <div class="panel" style="width:260px">
+    <div class="ph"><span class="ph-title">⬇ Export</span><span class="ph-badge badge-idle" id="exportBadge">No LUT</span></div>
+    <div class="pscroll">
+      <div class="field"><span class="lbl">LUT Name</span><input type="text" id="lutName" value="HALEA_LUT_001"></div>
+      <span class="lbl">Format</span>
+      <div class="dl-grid">
+        <div class="dl-card disabled" id="dl-cube" onclick="downloadLUT('cube')"><span class="dl-ext">.cube</span><div class="dl-app">Resolve<br>Premiere</div></div>
+        <div class="dl-card disabled" id="dl-3dl" onclick="downloadLUT('3dl')"><span class="dl-ext">.3dl</span><div class="dl-app">Flame<br>Lustre</div></div>
+        <div class="dl-card disabled" id="dl-lut" onclick="downloadLUT('lut')"><span class="dl-ext">.lut</span><div class="dl-app">AE<br>FCPX</div></div>
+      </div>
+      <button class="btn btn-ghost btn-sm" style="width:100%;margin-bottom:12px" id="saveToShopBtn" onclick="saveCurrentToShop('lut')">💾 Save to My Library</button>
+      <span class="lbl">LUT Info</span>
+      <div class="meta-box">
+        <div class="meta-row"><span class="mk">Size</span><span class="mv" id="m-size">—</span></div>
+        <div class="meta-row"><span class="mk">Input</span><span class="mv" id="m-input">—</span></div>
+        <div class="meta-row"><span class="mk">Output</span><span class="mv" id="m-output">—</span></div>
+        <div class="meta-row"><span class="mk">Style</span><span class="mv" id="m-look">—</span></div>
+        <div class="meta-row"><span class="mk">Strength</span><span class="mv" id="m-str">—</span></div>
+      </div>
+      <div class="how-to"><strong>Premiere Pro</strong>Lumetri → Creative → Look → Browse → .cube<strong>DaVinci Resolve</strong>Color → LUTs → Open Folder → paste<strong>After Effects</strong>Effect → Apply Color LUT</div>
+    </div>
+  </div>
+</div>
+
+<!-- ═══ HALATION LAB ═══ -->
+<div class="workspace" id="ws-halation">
+  <div class="panel" style="width:322px">
+    <div class="ph"><span class="ph-title">✦ Halation Lab</span><span class="ph-badge badge-idle" id="halBadge">No image</span></div>
+    <div class="pscroll">
+      <div class="dz" id="halDropzone"><input type="file" id="halFile" accept="image/*"><span class="dz-icon">🎞</span><div class="dz-lbl">Drop screenshot / still</div><div class="dz-sub">JPG · PNG · WEBP</div></div>
+      <img id="halThumb" class="img-thumb" style="display:none" alt="">
+      <div class="sec-hd hot">Film Stocks</div><div class="preset-row" id="hal-presets"></div>
+      <div class="sec-hd">Active Effects</div><div class="tgl-row" id="hal-toggles"></div>
+      <div class="sec-hd hot">● Halation</div>
+      <div style="display:flex;flex-direction:column;gap:9px">
+        <div class="sw"><span class="sn">Threshold</span><input type="range" id="h-ht" min="0" max="100" value="62"><span class="sv" id="hv-ht">62%</span></div>
+        <div class="sw"><span class="sn">Radius</span><input type="range" id="h-hr" min="0" max="60" value="16"><span class="sv" id="hv-hr">16px</span></div>
+        <div class="sw"><span class="sn">Intensity</span><input type="range" id="h-hi" min="0" max="100" value="45"><span class="sv" id="hv-hi">45%</span></div>
+        <div class="sw"><span class="sn">Light Bleed</span><input type="range" id="h-lb" min="0" max="50" value="10"><span class="sv" id="hv-lb">10px</span></div>
+        <div class="sw"><span class="sn">Glow Tint</span><input type="range" id="h-gt" min="0" max="100" value="50"><span class="sv" id="hv-gt">50</span></div>
+      </div>
+      <div class="sec-hd">● Tone</div>
+      <div style="display:flex;flex-direction:column;gap:9px">
+        <div class="sw"><span class="sn">Exposure</span><input type="range" id="h-exp" min="-100" max="100" value="5"><span class="sv" id="hv-exp">+5</span></div>
+        <div class="sw"><span class="sn">Contrast</span><input type="range" id="h-con" min="-100" max="100" value="8"><span class="sv" id="hv-con">+8</span></div>
+        <div class="sw"><span class="sn">Highlights</span><input type="range" id="h-hl" min="-100" max="100" value="15"><span class="sv" id="hv-hl">+15</span></div>
+        <div class="sw"><span class="sn">Shadows</span><input type="range" id="h-sh" min="-100" max="100" value="8"><span class="sv" id="hv-sh">+8</span></div>
+        <div class="sw"><span class="sn">Whites</span><input type="range" id="h-wh" min="-100" max="100" value="18"><span class="sv" id="hv-wh">+18</span></div>
+        <div class="sw"><span class="sn">Blacks</span><input type="range" id="h-bl" min="-100" max="100" value="0"><span class="sv" id="hv-bl">0</span></div>
+      </div>
+      <div class="sec-hd">● Color</div>
+      <div style="display:flex;flex-direction:column;gap:9px">
+        <div class="sw"><span class="sn">Saturation</span><input type="range" id="h-sat" min="-100" max="100" value="-8"><span class="sv" id="hv-sat">-8</span></div>
+        <div class="sw"><span class="sn">Vibrance</span><input type="range" id="h-vib" min="-100" max="100" value="-5"><span class="sv" id="hv-vib">-5</span></div>
+        <div class="sw"><span class="sn">Temp</span><input type="range" id="h-tmp" min="-100" max="100" value="0"><span class="sv" id="hv-tmp">0</span></div>
+        <div class="sw"><span class="sn">Tint</span><input type="range" id="h-tnt" min="-100" max="100" value="0"><span class="sv" id="hv-tnt">0</span></div>
+        <div class="sw"><span class="sn">Split Sh</span><input type="range" id="h-ssh" min="-100" max="100" value="0"><span class="sv" id="hv-ssh">0</span></div>
+        <div class="sw"><span class="sn">Split Hi</span><input type="range" id="h-shi" min="-100" max="100" value="0"><span class="sv" id="hv-shi">0</span></div>
+      </div>
+      <div class="sec-hd">● Grain</div>
+      <div style="display:flex;flex-direction:column;gap:9px">
+        <div class="sw"><span class="sn">Amount</span><input type="range" id="h-gr" min="0" max="100" value="14"><span class="sv" id="hv-gr">14%</span></div>
+        <div class="sw"><span class="sn">Size</span><input type="range" id="h-gs" min="1" max="5" step="0.1" value="1.5"><span class="sv" id="hv-gs">1.5</span></div>
+      </div>
+      <div class="sec-hd">● Vignette</div>
+      <div style="display:flex;flex-direction:column;gap:9px">
+        <div class="sw"><span class="sn">Amount</span><input type="range" id="h-va" min="0" max="100" value="38"><span class="sv" id="hv-va">38%</span></div>
+        <div class="sw"><span class="sn">Feather</span><input type="range" id="h-vf" min="0" max="100" value="68"><span class="sv" id="hv-vf">68%</span></div>
+      </div>
+      <div class="sec-hd">● Film Fade</div>
+      <div style="display:flex;flex-direction:column;gap:9px">
+        <div class="sw"><span class="sn">Black Lift</span><input type="range" id="h-bk" min="0" max="60" value="8"><span class="sv" id="hv-bk">8</span></div>
+        <div class="sw"><span class="sn">White Crush</span><input type="range" id="h-wc" min="0" max="60" value="5"><span class="sv" id="hv-wc">5</span></div>
+      </div>
+      <div style="height:20px"></div>
+    </div>
+    <div style="padding:12px 15px;border-top:1px solid var(--b1);background:var(--s1);flex-shrink:0">
+      <button class="btn btn-gold" id="hal-export">⬇ Download .cube LUT</button>
+      <div class="btn-row">
+        <button class="btn btn-sm btn-ghost" style="flex:1" id="hal-reset">Reset</button>
+        <button class="btn btn-sm btn-ghost" style="flex:1" id="hal-random">🎲</button>
+        <button class="btn btn-sm btn-ghost" style="flex:1" id="hal-save">💾 Library</button>
+      </div>
+    </div>
+  </div>
+  <div class="panel flex">
+    <div class="ph"><span class="ph-title">Live Preview</span>
+      <div style="margin-left:auto;display:flex;gap:4px">
+        <button class="btn btn-sm btn-ghost pmode-btn active" data-mode="split" style="padding:3px 11px">Split</button>
+        <button class="btn btn-sm btn-ghost pmode-btn" data-mode="after" style="padding:3px 11px">After</button>
+        <button class="btn btn-sm btn-ghost pmode-btn" data-mode="before" style="padding:3px 11px">Before</button>
+      </div>
+    </div>
+    <div style="flex:1;display:flex;align-items:center;justify-content:center;padding:20px;overflow:hidden;position:relative" id="hal-preview-wrap">
+      <div class="no-state" id="hal-no-img"><div class="ni">🎞</div><p>Drop a screenshot<br>to see live halation</p></div>
+      <div class="split-wrap" id="hal-split" style="display:none;width:100%;height:100%">
+        <canvas id="hal-before" class="split-canvas"></canvas>
+        <canvas id="hal-after" style="position:absolute;top:0;left:0;width:100%;height:100%;object-fit:contain;clip-path:inset(0 50% 0 0)"></canvas>
+        <div class="split-bar" id="split-bar"><div class="split-handle">⇔</div></div>
+      </div>
+      <canvas id="hal-single" style="display:none;max-width:100%;max-height:100%"></canvas>
+    </div>
+    <div style="padding:8px 16px;border-top:1px solid var(--b1);background:var(--s1);display:flex;gap:16px;align-items:center;flex-shrink:0">
+      <div style="font-size:9px;font-family:var(--mono);color:var(--t3)" id="hal-info-preset">No preset</div>
+      <div style="font-size:9px;font-family:var(--mono);color:var(--t3)">33³ LUT</div>
+      <div style="font-size:9px;font-family:var(--mono);color:var(--t3)" id="hal-info-size">—</div>
+      <div style="margin-left:auto;font-size:9px;color:var(--t3)">100% offline</div>
+    </div>
+  </div>
+</div>
+
+<!-- ═══ AI ASSISTANT ═══ -->
+<div class="workspace" id="ws-ai" style="flex-direction:column">
+  <div class="ai-chat">
+    <div class="chat-history" id="chat-history">
+      <div class="msg system">🤖 HALEA AI — your color grading second brain</div>
+      <div class="msg ai"><strong>Halo!</strong> Gw AI assistant HALEA. Bisa bantu lo soal color grading, film look, LUT, sampe strategi jualan preset. Mau tanya apa? 🎬</div>
+    </div>
+    <div class="quick-btns">
+      <div class="qbtn" onclick="sendQuick('Apa itu halation dan kenapa bikin film look bagus?')">Apa itu halation?</div>
+      <div class="qbtn" onclick="sendQuick('Bedain S-Log2 vs S-Log3, kapan pake masing-masing?')">S-Log2 vs S-Log3</div>
+      <div class="qbtn" onclick="sendQuick('Gimana cara harga preset LUT yang gw jual?')">Strategi harga preset</div>
+      <div class="qbtn" onclick="sendQuick('Recipe color grading buat teal & orange look?')">Teal & Orange recipe</div>
+      <div class="qbtn" onclick="sendQuick('Tips marketing preset pack ke market global?')">Marketing preset</div>
+      <div class="qbtn" onclick="sendQuick('Cara fix footage yang kebanyakan kuning/oranye?')">Fix warna kuning</div>
+    </div>
+    <div class="chat-input-wrap">
+      <textarea class="chat-input" id="chat-input" placeholder="Tanya soal color grading, bisnis preset, atau apapun..." rows="2"></textarea>
+      <div class="chat-actions"><button class="btn btn-ai" style="flex:1" id="chat-send">🤖 Ask HALEA AI</button><button class="btn btn-sm btn-ghost" onclick="clearChat()">Clear</button></div>
+    </div>
+  </div>
+</div>
+
+<!-- ═══ SHOP ═══ -->
+<div class="workspace" id="ws-shop">
+  <div class="shop-wrap">
+    <div class="shop-hero">
+      <h1>The <em>HALEA</em> Shop</h1>
+      <p>Premium LUTs &amp; presets crafted by @robbiesatriaa. Cinematic looks engineered for real footage.</p>
+    </div>
+    <div class="shop-filters">
+      <div class="pchip active" data-filter="all" onclick="filterShop('all',this)">All</div>
+      <div class="pchip" data-filter="lut" onclick="filterShop('lut',this)">LUTs</div>
+      <div class="pchip" data-filter="preset" onclick="filterShop('preset',this)">Presets</div>
+      <div class="pchip" data-filter="pack" onclick="filterShop('pack',this)">Packs</div>
+      <div class="pchip" data-filter="free" onclick="filterShop('free',this)">Free</div>
+    </div>
+    <div class="shop-grid" id="shopGrid"></div>
+  </div>
+</div>
+
+<!-- ═══ TOOLS ═══ -->
+<div class="workspace" id="ws-tools" style="overflow-y:auto;flex-direction:column;padding:24px">
+  <div style="font-size:11px;font-weight:700;letter-spacing:.08em;color:var(--t3);text-transform:uppercase;margin-bottom:14px">Editor Toolkit</div>
+  <div class="tools-grid">
+    <div class="tool-card" onclick="openTool('frameCalc')"><span class="tc-icon">⏱</span><div class="tc-name">Frame Rate Calculator</div><div class="tc-desc">Timecode, frame count, duration math</div><span class="tc-badge" style="background:rgba(255,210,63,.1);color:var(--a2)">CALC</span></div>
+    <div class="tool-card" onclick="openTool('colorTemp')"><span class="tc-icon">🌡</span><div class="tc-name">Color Temp Chart</div><div class="tc-desc">Kelvin reference: tungsten to daylight</div><span class="tc-badge" style="background:rgba(255,177,63,.1);color:var(--warn)">REF</span></div>
+    <div class="tool-card" onclick="openTool('logExposure')"><span class="tc-icon">📊</span><div class="tc-name">Log Exposure Guide</div><div class="tc-desc">Proper exposure per log format</div><span class="tc-badge" style="background:rgba(255,107,53,.1);color:var(--accent)">GUIDE</span></div>
+    <div class="tool-card" onclick="openTool('bitrateCalc')"><span class="tc-icon">💾</span><div class="tc-name">Storage Calculator</div><div class="tc-desc">Estimate card & drive needs</div><span class="tc-badge" style="background:rgba(255,210,63,.1);color:var(--a2)">CALC</span></div>
+    <div class="tool-card" onclick="openTool('aspectRatio')"><span class="tc-icon">📐</span><div class="tc-name">Aspect & Crop Guide</div><div class="tc-desc">Cinematic ratios, social formats</div><span class="tc-badge" style="background:rgba(61,223,213,.1);color:var(--a3)">REF</span></div>
+    <div class="tool-card" onclick="openTool('shortcutRef')"><span class="tc-icon">⌨️</span><div class="tc-name">Premiere Shortcuts</div><div class="tc-desc">Essential keyboard shortcuts</div><span class="tc-badge" style="background:rgba(179,136,255,.1);color:var(--a4)">CHEAT</span></div>
+    <div class="tool-card" onclick="openTool('shotMatch')"><span class="tc-icon">🎨</span><div class="tc-name">Shot Match Tips</div><div class="tc-desc">Match color between clips</div><span class="tc-badge" style="background:rgba(61,216,138,.1);color:var(--ok)">TIPS</span></div>
+    <div class="tool-card" onclick="openTool('exportPreset')"><span class="tc-icon">🚀</span><div class="tc-name">Export Settings</div><div class="tc-desc">Best settings per platform</div><span class="tc-badge" style="background:rgba(255,107,53,.1);color:var(--accent)">GUIDE</span></div>
+  </div>
+  <div id="tool-panel" style="display:none;background:var(--s2);border:1px solid var(--b1);border-radius:var(--r2);padding:20px;margin-top:16px;max-width:1000px"></div>
+</div>
+
+<!-- ═══ LEARN ═══ -->
+<div class="workspace" id="ws-learn" style="overflow-y:auto;flex-direction:column;padding:24px">
+  <div style="font-size:11px;font-weight:700;letter-spacing:.08em;color:var(--t3);text-transform:uppercase;margin-bottom:14px">Beginner Guide — Color Grading</div>
+  <div class="lesson-list" id="lesson-list"></div>
+</div>
+
+<!-- ═══ ADMIN ═══ -->
+<div class="workspace" id="ws-admin" style="overflow-y:auto;flex-direction:column;padding:24px">
+  <div style="font-size:11px;font-weight:700;letter-spacing:.08em;color:var(--t3);text-transform:uppercase;margin-bottom:14px">Admin Dashboard</div>
+  <div class="stat-row">
+    <div class="stat-box"><div class="stat-num" id="stat-products">0</div><div class="stat-lbl">Products</div></div>
+    <div class="stat-box"><div class="stat-num" id="stat-free">0</div><div class="stat-lbl">Free Items</div></div>
+    <div class="stat-box"><div class="stat-num" id="stat-paid">0</div><div class="stat-lbl">Paid Items</div></div>
+  </div>
+  <div class="admin-grid">
+    <div class="admin-card">
+      <h3>➕ Upload Product</h3>
+      <div class="field"><span class="lbl">Product Name</span><input type="text" id="up-name" placeholder="e.g. Jakarta Nights LUT Pack"></div>
+      <div class="field"><span class="lbl">Type</span><select id="up-type"><option value="lut">LUT</option><option value="preset">Preset</option><option value="pack">Pack</option><option value="credits">AI Credits</option></select></div>
+      <div class="field"><span class="lbl">Description</span><textarea id="up-desc" placeholder="Short description..."></textarea></div>
+      <div class="field"><span class="lbl">Price (USD, 0 = free)</span><input type="number" id="up-price" value="0" min="0" step="1"></div>
+      <div class="field"><span class="lbl">Thumbnail (optional)</span>
+        <div class="footage-dz" id="up-thumb-zone" style="padding:14px"><input type="file" id="up-thumb" accept="image/*"><span style="font-size:10px;color:var(--t3)">📷 Drop thumbnail image</span></div>
+      </div>
+      <div class="field"><span class="lbl">LUT/Preset File (.cube)</span>
+        <div class="footage-dz" id="up-file-zone" style="padding:14px"><input type="file" id="up-file" accept=".cube,.3dl,.lut,.zip"><span style="font-size:10px;color:var(--t3)" id="up-file-label">📁 Drop .cube file</span></div>
+      </div>
+      <button class="btn btn-accent" onclick="uploadProduct()">Publish to Shop</button>
+    </div>
+    <div class="admin-card">
+      <h3>📦 Manage Products</h3>
+      <p style="font-size:11px;color:var(--t2);margin-bottom:4px">Products currently in your shop:</p>
+      <div class="admin-list" id="admin-product-list"></div>
+      <div style="margin-top:16px;padding-top:16px;border-top:1px solid var(--b1)">
+        <h3 style="margin-bottom:10px">💾 Data</h3>
+        <div class="btn-row" style="margin-top:0">
+          <button class="btn btn-sm btn-ghost" style="flex:1" onclick="exportShopData()">Export Backup</button>
+          <button class="btn btn-sm btn-ghost" style="flex:1" onclick="document.getElementById('import-data').click()">Import Backup</button>
+        </div>
+        <input type="file" id="import-data" accept=".json" style="display:none" onchange="importShopData(this)">
+        <button class="btn btn-sm btn-ghost" style="width:100%;margin-top:8px;color:var(--err)" onclick="seedDemoProducts()">Reset to Demo Products</button>
+      </div>
+      <div style="margin-top:16px;padding-top:16px;border-top:1px solid var(--b1)">
+        <h3 style="margin-bottom:10px">🤖 AI Credit Codes</h3>
+        <p style="font-size:11px;color:var(--t2);margin-bottom:10px">Generate codes to give customers after payment. Each code = X AI credits.</p>
+        <div class="field"><span class="lbl">Credits per code</span>
+          <select id="credit-amount"><option value="5">5 credits ($3)</option><option value="10">10 credits ($5)</option><option value="25">25 credits ($10)</option><option value="50">50 credits ($18)</option></select>
+        </div>
+        <button class="btn btn-sm btn-accent" style="width:100%;margin-bottom:8px" onclick="genCreditCode()">Generate Code</button>
+        <div id="credit-code-out" style="display:none;background:var(--s3);border:1px solid var(--b1);border-radius:var(--r);padding:10px;font-family:var(--mono);font-size:11px;word-break:break-all;cursor:pointer" onclick="copyCode(this)"></div>
+        <p id="credit-code-hint" style="display:none;font-size:9px;color:var(--t3);margin-top:4px">Click code to copy · Send to customer via DM</p>
+        <div style="margin-top:10px;padding-top:10px;border-top:1px solid var(--b1)">
+          <p style="font-size:10px;font-weight:700;color:var(--txt);margin-bottom:6px">Set API Key (for AI Match):</p>
+          <div style="display:flex;gap:6px">
+            <input type="password" id="admin-api-key" placeholder="sk-ant-..." style="flex:1;font-size:11px;font-family:var(--mono)">
+            <button class="btn btn-sm btn-ghost" style="width:auto" onclick="saveAdminKey()">Save</button>
+          </div>
+          <p style="font-size:9px;color:var(--t3);margin-top:4px">API key is set on the server (Vercel env var). No action needed.</p>
+        </div>
+      </div>
+    </div>
+  </div>
+</div>
+
+<!-- MODALS -->
+<div class="modal-overlay" id="modal"><div class="modal"><div class="modal-head"><div class="modal-title" id="modal-title"></div><button class="modal-close" onclick="closeModal()">✕</button></div><div class="modal-body" id="modal-body"></div><div class="modal-foot" id="modal-foot"><button class="btn btn-sm btn-ghost" onclick="closeModal()">Close</button></div></div></div>
+
+<div class="modal-overlay" id="loginModal"><div class="modal sm"><div class="modal-body" style="padding:32px">
+  <div class="login-box">
+    <div class="lmark"><svg width="28" height="28" viewBox="0 0 20 20"><circle cx="10" cy="10" r="3" fill="white"/><circle cx="10" cy="10" r="6.5" fill="none" stroke="white" stroke-width="1.2" opacity=".6"/></svg></div>
+    <h2>Sign in to HALEA</h2>
+    <p>Admin access for managing your shop</p>
+    <div class="field" style="text-align:left"><span class="lbl">Username</span><input type="text" id="login-user" placeholder="admin"></div>
+    <div class="field" style="text-align:left"><span class="lbl">Password</span><input type="password" id="login-pass" placeholder="••••••••" onkeydown="if(event.key==='Enter')doLogin()"></div>
+    <button class="btn btn-accent" style="margin-top:6px" onclick="doLogin()">Sign In</button>
+    <div style="font-size:9px;color:var(--t3);margin-top:14px;font-family:var(--mono)">Demo: admin / halea2025</div>
+    <button class="btn btn-sm btn-ghost" style="margin-top:10px" onclick="closeLogin()">Continue as Guest</button>
+  </div>
+</div></div></div>
+
+<div class="toast" id="toast"></div>
+<canvas id="offscreen" style="display:none"></canvas>
+
+<!-- ENGINE + APP -->
+<script>
+// ════════════════════════════════════════════════════════════════════════════
+// HALEA COLOR ENGINE v3 — Advanced reference analysis & LUT generation
+// ════════════════════════════════════════════════════════════════════════════
+
+const Engine = (() => {
+
+  // ── Math utils ───────────────────────────────────────────────────────────
+  const clamp = (v, lo = 0, hi = 1) => v < lo ? lo : v > hi ? hi : v;
+  const lerp = (a, b, t) => a + (b - a) * t;
+  const smoothstep = (e0, e1, x) => { const t = clamp((x - e0) / (e1 - e0)); return t * t * (3 - 2 * t); };
+
+  // ── Color space conversions ────────────────────────────────────────────────
+  function rgb2hsl(r, g, b) {
+    const mx = Math.max(r, g, b), mn = Math.min(r, g, b);
+    let h = 0, s = 0, l = (mx + mn) / 2;
+    if (mx !== mn) {
+      const d = mx - mn;
+      s = l > 0.5 ? d / (2 - mx - mn) : d / (mx + mn);
+      if (mx === r) h = (g - b) / d + (g < b ? 6 : 0);
+      else if (mx === g) h = (b - r) / d + 2;
+      else h = (r - g) / d + 4;
+      h /= 6;
+    }
+    return [h, s, l];
+  }
+
+  function hsl2rgb(h, s, l) {
+    if (s === 0) return [l, l, l];
+    const hue = (p, q, t) => {
+      if (t < 0) t += 1; if (t > 1) t -= 1;
+      if (t < 1/6) return p + (q - p) * 6 * t;
+      if (t < 1/2) return q;
+      if (t < 2/3) return p + (q - p) * (2/3 - t) * 6;
+      return p;
+    };
+    const q = l < 0.5 ? l * (1 + s) : l + s - l * s;
+    const p = 2 * l - q;
+    return [hue(p, q, h + 1/3), hue(p, q, h), hue(p, q, h - 1/3)];
+  }
+
+  // RGB to LAB (for perceptual color matching)
+  function rgb2lab(r, g, b) {
+    // sRGB to linear
+    const lin = c => c > 0.04045 ? Math.pow((c + 0.055) / 1.055, 2.4) : c / 12.92;
+    r = lin(r); g = lin(g); b = lin(b);
+    // to XYZ (D65)
+    let x = (r * 0.4124 + g * 0.3576 + b * 0.1805) / 0.95047;
+    let y = (r * 0.2126 + g * 0.7152 + b * 0.0722) / 1.0;
+    let z = (r * 0.0193 + g * 0.1192 + b * 0.9505) / 1.08883;
+    const f = t => t > 0.008856 ? Math.cbrt(t) : (7.787 * t + 16/116);
+    x = f(x); y = f(y); z = f(z);
+    return [116 * y - 16, 500 * (x - y), 200 * (y - z)];
+  }
+
+  const luma = (r, g, b) => 0.2126 * r + 0.7152 * g + 0.0722 * b;
+
+  // ════════════════════════════════════════════════════════════════════════
+  // DEEP REFERENCE ANALYSIS
+  // Splits image into tonal zones, detects skin, measures color cast per zone
+  // ════════════════════════════════════════════════════════════════════════
+  function analyzeReference(imgData) {
+    const d = imgData.data;
+    const N = d.length / 4;
+    const step = Math.max(1, Math.floor(N / 8000)); // sample ~8000 px
+
+    // Tonal zones: shadows (0-0.33), mids (0.33-0.66), highs (0.66-1)
+    const zones = {
+      shadow:    { r: 0, g: 0, b: 0, count: 0 },
+      mid:       { r: 0, g: 0, b: 0, count: 0 },
+      highlight: { r: 0, g: 0, b: 0, count: 0 },
+    };
+
+    let totalR = 0, totalG = 0, totalB = 0, totalCount = 0;
+    let skinR = 0, skinG = 0, skinB = 0, skinCount = 0;
+    let satSum = 0;
+    const lumaHist = new Array(64).fill(0);
+
+    for (let i = 0; i < d.length; i += 4 * step) {
+      const r = d[i] / 255, g = d[i+1] / 255, b = d[i+2] / 255;
+      const L = luma(r, g, b);
+
+      totalR += r; totalG += g; totalB += b; totalCount++;
+      lumaHist[Math.min(63, Math.floor(L * 64))]++;
+
+      const [, s] = rgb2hsl(r, g, b);
+      satSum += s;
+
+      // Zone assignment
+      let z = L < 0.33 ? zones.shadow : L < 0.66 ? zones.mid : zones.highlight;
+      z.r += r; z.g += g; z.b += b; z.count++;
+
+      // Skin tone detection (heuristic: R>G>B, within hue range)
+      const [h] = rgb2hsl(r, g, b);
+      if (r > g && g > b && r > 0.25 && r < 0.95 && (h < 0.08 || h > 0.95) && s > 0.1 && s < 0.6) {
+        skinR += r; skinG += g; skinB += b; skinCount++;
+      }
+    }
+
+    const avg = (z) => z.count ? { r: z.r/z.count, g: z.g/z.count, b: z.b/z.count } : { r: 0.5, g: 0.5, b: 0.5 };
+    const shadow = avg(zones.shadow);
+    const mid = avg(zones.mid);
+    const highlight = avg(zones.highlight);
+
+    const avgR = totalR / totalCount, avgG = totalG / totalCount, avgB = totalB / totalCount;
+    const avgLuma = luma(avgR, avgG, avgB);
+    const avgSat = satSum / totalCount;
+
+    // Color cast per zone (deviation from neutral gray)
+    const cast = (z) => {
+      const m = (z.r + z.g + z.b) / 3;
+      return { r: z.r - m, g: z.g - m, b: z.b - m };
+    };
+
+    // Skin tone (or fallback to mid)
+    const skin = skinCount > 50
+      ? { r: skinR/skinCount, g: skinG/skinCount, b: skinB/skinCount }
+      : mid;
+
+    // Contrast estimate: spread of luma histogram
+    let lo = 0, hi = 63;
+    let acc = 0; const total = lumaHist.reduce((a,b)=>a+b,0);
+    for (let i = 0; i < 64; i++) { acc += lumaHist[i]; if (acc > total * 0.02) { lo = i; break; } }
+    acc = 0;
+    for (let i = 63; i >= 0; i--) { acc += lumaHist[i]; if (acc > total * 0.02) { hi = i; break; } }
+    const contrast = (hi - lo) / 63; // 0-1
+
+    return {
+      shadow, mid, highlight, skin,
+      shadowCast: cast(zones.shadow.count ? shadow : mid),
+      midCast: cast(mid),
+      highlightCast: cast(highlight),
+      avg: { r: avgR, g: avgG, b: avgB },
+      avgLuma, avgSat, contrast,
+      warmth: avgR - avgB,
+      tint: avgG - (avgR + avgB) / 2,
+      lumaHist,
+      hasSkin: skinCount > 50,
+    };
+  }
+
+  // ════════════════════════════════════════════════════════════════════════
+  // LOG DECODE — accurate transfer functions
+  // ════════════════════════════════════════════════════════════════════════
+  const logDecoders = {
+    none: v => v,
+    slog2: v => v < 0.030 ? (v - 0.030) / 5 : (Math.pow(10, (v - 0.616596 - 0.03) / 0.432699) - 0.037584) / 0.9,
+    slog3: v => v < 0.1673 ? (v * 0.1677 - 0.0155) / 0.9 : (Math.pow(10, (v * 1023 - 420) / 261.5) * 0.18 - 0.01) / 0.9,
+    flog: v => v < 0.1007 ? (v - 0.0929) / 8.7363 : (Math.pow(10, (v - 0.5503) / 0.3460) - 0.0641) / 0.9,
+    flog2: v => v < 0.1007 ? (v - 0.0929) / 8.7363 : (Math.pow(10, (v - 0.5566) / 0.3434) - 0.0641) / 0.9,
+    dlog: v => v < 0.14 ? (v - 0.0929) / 6.025 : (Math.pow(10, (v - 0.601209) / 0.256663) - 0.0108) / 0.9,
+    dlogm: v => v < 0.14 ? (v - 0.0929) / 6.025 : (Math.pow(10, (v - 0.586) / 0.270) - 0.011) / 0.9,
+    iphone: v => v < 0.1 ? (v - 0.05) / 5 : (Math.pow(2, (v - 0.42) / 0.165) - 0.05) * 0.18,
+    clog2: v => v < 0.092 ? (v - 0.092) / 5.0 : (Math.pow(10, (v - 0.092864) / 0.281863) - 1) * 0.18 / 0.9,
+    clog3: v => v < 0.097 ? (v - 0.069) / 6.0 : (Math.pow(10, (v - 0.120949) / 0.368273) - 1) * 0.18 / 0.9,
+    vlog: v => v < 0.181 ? (v - 0.125) / 5.6 : Math.pow(10, (v - 0.598206) / 0.241514) - 0.00873,
+    log3g10: v => (Math.pow(10, (v - 0.0) / 0.224282) - 1) * 0.18 / 15.1927,
+  };
+
+  // ════════════════════════════════════════════════════════════════════════
+  // GENERATE LUT — uses deep analysis + per-zone matching
+  // ════════════════════════════════════════════════════════════════════════
+  function generateLUT(opts) {
+    const {
+      size = 33, logFmt = 'none', look = 'faithful',
+      strength = 0.85, satMod = 0, conMod = 0, tmpMod = 0, liftMod = 0, halMod = 0.3,
+      analysis = null, targetGamut = 'rec709',
+    } = opts;
+
+    const decode = logDecoders[logFmt] || logDecoders.none;
+    const lk = LOOKS[look] || LOOKS.faithful;
+    const lut = new Float32Array(size ** 3 * 3);
+    let idx = 0;
+
+    // Pre-compute matching targets from analysis
+    const A = analysis;
+    for (let bi = 0; bi < size; bi++) {
+      for (let gi = 0; gi < size; gi++) {
+        for (let ri = 0; ri < size; ri++) {
+          let r = ri / (size - 1), g = gi / (size - 1), b = bi / (size - 1);
+
+          // 1. Log decode → linear → back to display gamma
+          if (logFmt !== 'none') {
+            r = clamp(decode(r)); g = clamp(decode(g)); b = clamp(decode(b));
+            // re-apply display gamma (~2.2 → Rec709)
+            const gam = c => c <= 0.0031308 ? c * 12.92 : 1.055 * Math.pow(c, 1/2.4) - 0.055;
+            r = clamp(gam(r)); g = clamp(gam(g)); b = clamp(gam(b));
+          }
+
+          let L = luma(r, g, b);
+
+          // 2. ZONE-BASED REFERENCE MATCHING (the smart part)
+          if (A && strength > 0) {
+            // Weight by tonal zone membership
+            const wS = smoothstep(0.45, 0.0, L);    // shadow weight
+            const wH = smoothstep(0.55, 1.0, L);    // highlight weight
+            const wM = clamp(1 - wS - wH);           // mid weight
+
+            // Apply per-zone color cast from reference
+            const castR = A.shadowCast.r * wS + A.midCast.r * wM + A.highlightCast.r * wH;
+            const castG = A.shadowCast.g * wS + A.midCast.g * wM + A.highlightCast.g * wH;
+            const castB = A.shadowCast.b * wS + A.midCast.b * wM + A.highlightCast.b * wH;
+
+            r = clamp(r + castR * strength * 0.85);
+            g = clamp(g + castG * strength * 0.85);
+            b = clamp(b + castB * strength * 0.85);
+
+            // Match overall luma toward reference
+            const lumaTarget = A.avgLuma;
+            const lumaShift = (lumaTarget - 0.42) * strength * 0.25;
+            r = clamp(r + lumaShift); g = clamp(g + lumaShift); b = clamp(b + lumaShift);
+
+            // Match saturation toward reference
+            const [h, s, ll] = rgb2hsl(r, g, b);
+            const satTarget = A.avgSat;
+            const satRatio = 1 + (satTarget - s) * strength * 0.5;
+            const ns = clamp(s * satRatio);
+            [r, g, b] = hsl2rgb(h, ns, ll);
+
+            // Match contrast toward reference
+            const conTarget = A.contrast;
+            const cf = (conTarget - 0.6) * strength * 0.4;
+            r = clamp(0.5 + (r - 0.5) * (1 + cf));
+            g = clamp(0.5 + (g - 0.5) * (1 + cf));
+            b = clamp(0.5 + (b - 0.5) * (1 + cf));
+          }
+
+          // 3. LOOK STYLE
+          r = clamp(r + lk.warm * 0.5); b = clamp(b - lk.warm * 0.3);
+          const lm = luma(r, g, b);
+          const sf = 1 + lk.sat + satMod / 100;
+          r = clamp(lm + (r - lm) * sf); g = clamp(lm + (g - lm) * sf); b = clamp(lm + (b - lm) * sf);
+          const cf2 = lk.con + conMod / 100;
+          r = clamp(0.5 + (r - 0.5) * (1 + cf2)); g = clamp(0.5 + (g - 0.5) * (1 + cf2)); b = clamp(0.5 + (b - 0.5) * (1 + cf2));
+
+          // 4. TONE ADJUSTMENTS
+          const liftV = lk.lift + liftMod / 100;
+          const tmpV = lk.warm + tmpMod / 100;
+          r = clamp(r + liftV * (1 - r) + tmpV * 0.25);
+          g = clamp(g + liftV * (1 - g));
+          b = clamp(b + liftV * (1 - b) - tmpV * 0.18);
+
+          // 5. FILM CURVE (toe + shoulder)
+          const film = v => {
+            if (v < 0.08) return lk.toe + v * (1 - lk.toe) * 1.15;
+            if (v > lk.shoulder) return lk.shoulder + (v - lk.shoulder) * 0.4;
+            return v;
+          };
+          r = clamp(film(r)); g = clamp(film(g)); b = clamp(film(b));
+
+          // 6. HALATION
+          if (halMod > 0) {
+            const lh = luma(r, g, b);
+            const thr = 0.62 - halMod * 0.18;
+            if (lh > thr) {
+              const fac = Math.pow((lh - thr) / (1 - thr), 1.5) * halMod * 0.6;
+              r = clamp(r + fac * 0.5); g = clamp(g + fac * 0.03); b = clamp(b - fac * 0.05);
+            }
+          }
+
+          // 7. GAMUT
+          if (targetGamut === 'p3') { r = clamp(r * 1.02 - 0.01); b = clamp(b * 0.99 + 0.005); }
+          else if (targetGamut === 'rec2020') { r = clamp(r * 1.05 - 0.02); b = clamp(b * 1.03 - 0.01); }
+
+          lut[idx++] = r; lut[idx++] = g; lut[idx++] = b;
+        }
+      }
+    }
+
+    return { lut, size, logFmt, look, strength };
+  }
+
+  // ── Look definitions ───────────────────────────────────────────────────────
+  const LOOKS = {
+    faithful:  { sat: 0,     con: 0,    lift: 0,    warm: 0,     toe: 0.01, shoulder: 0.95 },
+    cinematic: { sat: -0.05, con: 0.15, lift: 0.05, warm: 0.02,  toe: 0.05, shoulder: 0.92 },
+    warm:      { sat: 0.05,  con: 0.05, lift: 0.03, warm: 0.09,  toe: 0.03, shoulder: 0.93 },
+    cool:      { sat: 0.02,  con: 0.06, lift: 0.02, warm: -0.07, toe: 0.02, shoulder: 0.95 },
+    bleach:    { sat: -0.32, con: 0.26, lift: -0.02,warm: 0,     toe: 0,    shoulder: 0.91 },
+    vintage:   { sat: -0.12, con: 0.04, lift: 0.07, warm: 0.06,  toe: 0.06, shoulder: 0.92 },
+    natural:   { sat: 0.02,  con: 0.02, lift: 0.01, warm: 0.01,  toe: 0.02, shoulder: 0.96 },
+    teal_orange:{sat: 0.08,  con: 0.14, lift: 0.04, warm: 0.03,  toe: 0.04, shoulder: 0.93 },
+    moody:     { sat: -0.18, con: 0.10, lift: 0.08, warm: -0.03, toe: 0.07, shoulder: 0.90 },
+  };
+
+  // ── Trilinear interpolation (for applying LUT to footage) ──────────────────
+  function trilinear(ri, gi, bi, lut, size) {
+    const R = ri/255*(size-1), G = gi/255*(size-1), B = bi/255*(size-1);
+    const r0 = Math.floor(R), g0 = Math.floor(G), b0 = Math.floor(B);
+    const r1 = Math.min(r0+1,size-1), g1 = Math.min(g0+1,size-1), b1 = Math.min(b0+1,size-1);
+    const dr = R-r0, dg = G-g0, db = B-b0;
+    const gv = (rr,gg,bb,c) => lut[(bb*size*size+gg*size+rr)*3+c];
+    const out = [];
+    for (let c = 0; c < 3; c++) {
+      const c000=gv(r0,g0,b0,c),c100=gv(r1,g0,b0,c),c010=gv(r0,g1,b0,c),c110=gv(r1,g1,b0,c);
+      const c001=gv(r0,g0,b1,c),c101=gv(r1,g0,b1,c),c011=gv(r0,g1,b1,c),c111=gv(r1,g1,b1,c);
+      const c0 = lerp(lerp(c000,c100,dr),lerp(c010,c110,dr),dg);
+      const c1 = lerp(lerp(c001,c101,dr),lerp(c011,c111,dr),dg);
+      out.push(clamp(Math.round(lerp(c0,c1,db)*255),0,255));
+    }
+    return out;
+  }
+
+  // ════════════════════════════════════════════════════════════════════════
+  // NODE-BASED GRADING (PowerGrade-style) — all bakeable to .cube
+  // ════════════════════════════════════════════════════════════════════════
+
+  // Curve evaluation: monotone, from sorted control points [[x,y],...] in 0..1
+  function curveEval(points, x) {
+    if (!points || points.length < 2) return x;
+    if (x <= points[0][0]) return points[0][1];
+    const n = points.length;
+    if (x >= points[n-1][0]) return points[n-1][1];
+    let i = 0;
+    while (i < n - 1 && points[i+1][0] < x) i++;
+    const [x0, y0] = points[i], [x1, y1] = points[i+1];
+    const t = (x - x0) / (x1 - x0 || 1e-6);
+    // smooth (cosine) interpolation for natural curve feel
+    const ts = (1 - Math.cos(t * Math.PI)) / 2;
+    return clamp(y0 + (y1 - y0) * ts);
+  }
+
+  // Hue distance on color wheel (0..1 wrap)
+  function hueDist(a, b) { let d = Math.abs(a - b); return Math.min(d, 1 - d); }
+
+  // ── NODE PROCESSORS: each takes [r,g,b] (0..1) + params, returns [r,g,b] ──
+  const NODES = {
+    // Lift / Gamma / Gain + temp/tint/sat/contrast
+    primary(rgb, p) {
+      let [r, g, b] = rgb;
+      const lgg = (v, lift, gamma, gain) => {
+        v = v + lift * (1 - v) * 0.8 + lift * 0.2;       // lift (shadows-weighted + slight global)
+        v = v * (1 + gain);                               // gain (highlights)
+        if (gamma) v = Math.pow(clamp(v), 1 / (1 + gamma)); // gamma (mids)
+        return clamp(v);
+      };
+      r = lgg(r, (p.lift||0)+(p.liftR||0), (p.gamma||0)+(p.gammaR||0), (p.gain||0)+(p.gainR||0));
+      g = lgg(g, (p.lift||0)+(p.liftG||0), (p.gamma||0)+(p.gammaG||0), (p.gain||0)+(p.gainG||0));
+      b = lgg(b, (p.lift||0)+(p.liftB||0), (p.gamma||0)+(p.gammaB||0), (p.gain||0)+(p.gainB||0));
+      // temp / tint
+      if (p.temp) { r = clamp(r + p.temp * 0.15); b = clamp(b - p.temp * 0.15); }
+      if (p.tint) { g = clamp(g - p.tint * 0.12); r = clamp(r + p.tint*0.04); b = clamp(b + p.tint*0.04); }
+      // contrast (pivot 0.5)
+      if (p.con) { const c = 1 + p.con; r = clamp(0.5+(r-0.5)*c); g = clamp(0.5+(g-0.5)*c); b = clamp(0.5+(b-0.5)*c); }
+      // saturation
+      if (p.sat) { const lm = luma(r,g,b), s = 1 + p.sat; r = clamp(lm+(r-lm)*s); g = clamp(lm+(g-lm)*s); b = clamp(lm+(b-lm)*s); }
+      return [r, g, b];
+    },
+
+    // Curves: master (all channels) + per-channel R/G/B
+    curves(rgb, p) {
+      let [r, g, b] = rgb;
+      if (p.master) { r = curveEval(p.master, r); g = curveEval(p.master, g); b = curveEval(p.master, b); }
+      if (p.r) r = curveEval(p.r, r);
+      if (p.g) g = curveEval(p.g, g);
+      if (p.b) b = curveEval(p.b, b);
+      return [clamp(r), clamp(g), clamp(b)];
+    },
+
+    // HSL Secondary qualifier — target a hue range, shift hue/sat/lum
+    hsl(rgb, p) {
+      let [h, s, l] = rgb2hsl(rgb[0], rgb[1], rgb[2]);
+      const range = (p.range || 0.08);
+      const d = hueDist(h, p.centerHue || 0);
+      if (d < range) {
+        // also qualify by saturation (skip near-gray pixels) unless wide
+        const satOk = s > (p.minSat || 0.05);
+        if (satOk) {
+          const w = Math.pow(1 - d / range, 1.5); // smooth falloff
+          h = (h + (p.hueShift || 0) * w + 1) % 1;
+          s = clamp(s + (p.satShift || 0) * w);
+          l = clamp(l + (p.lumShift || 0) * w);
+          return hsl2rgb(h, s, l);
+        }
+      }
+      return rgb;
+    },
+
+    // Look style (reuses LOOKS) with amount
+    look(rgb, p) {
+      const lk = LOOKS[p.look] || LOOKS.faithful;
+      const amt = p.amount == null ? 1 : p.amount;
+      let [r, g, b] = rgb;
+      let nr = clamp(r + lk.warm * 0.5), ng = g, nb = clamp(b - lk.warm * 0.3);
+      const lm = luma(nr, ng, nb), sf = 1 + lk.sat;
+      nr = clamp(lm+(nr-lm)*sf); ng = clamp(lm+(ng-lm)*sf); nb = clamp(lm+(nb-lm)*sf);
+      const cf = lk.con;
+      nr = clamp(0.5+(nr-0.5)*(1+cf)); ng = clamp(0.5+(ng-0.5)*(1+cf)); nb = clamp(0.5+(nb-0.5)*(1+cf));
+      nr = clamp(nr + lk.lift*(1-nr)); ng = clamp(ng + lk.lift*(1-ng)); nb = clamp(nb + lk.lift*(1-nb));
+      const film = v => v < 0.08 ? lk.toe + v*(1-lk.toe)*1.15 : v > lk.shoulder ? lk.shoulder+(v-lk.shoulder)*0.4 : v;
+      nr = clamp(film(nr)); ng = clamp(film(ng)); nb = clamp(film(nb));
+      return [lerp(r, nr, amt), lerp(g, ng, amt), lerp(b, nb, amt)];
+    },
+
+    // Halation
+    halation(rgb, p) {
+      let [r, g, b] = rgb;
+      const lh = luma(r, g, b), thr = 1 - (p.threshold || 0.6);
+      if (lh > thr) {
+        const fac = Math.pow((lh - thr) / (1 - thr), 1.5) * (p.intensity || 0.4);
+        const tint = p.tint == null ? 0.5 : p.tint;
+        r = clamp(r + fac * 0.5 * (0.5 + tint));
+        g = clamp(g + fac * 0.04);
+        b = clamp(b - fac * 0.06 * (0.5 + tint));
+      }
+      return [r, g, b];
+    },
+
+    // Log decode (as a node, usually first)
+    logInput(rgb, p) {
+      const dec = logDecoders[p.format] || logDecoders.none;
+      if (p.format === 'none') return rgb;
+      const gam = c => c <= 0.0031308 ? c*12.92 : 1.055*Math.pow(c,1/2.4)-0.055;
+      return [clamp(gam(clamp(dec(rgb[0])))), clamp(gam(clamp(dec(rgb[1])))), clamp(gam(clamp(dec(rgb[2]))))];
+    },
+  };
+
+  // Bake an entire node stack into a 3D LUT
+  function bakeNodeStack(stack, opts = {}) {
+    const { size = 33, targetGamut = 'rec709' } = opts;
+    const lut = new Float32Array(size ** 3 * 3);
+    let idx = 0;
+    for (let bi = 0; bi < size; bi++)
+      for (let gi = 0; gi < size; gi++)
+        for (let ri = 0; ri < size; ri++) {
+          let rgb = [ri/(size-1), gi/(size-1), bi/(size-1)];
+          for (const node of stack) {
+            if (!node.enabled) continue;
+            const fn = NODES[node.type];
+            if (fn) rgb = fn(rgb, node.params || {});
+          }
+          let [r, g, b] = rgb;
+          if (targetGamut === 'p3') { r = clamp(r*1.02-0.01); b = clamp(b*0.99+0.005); }
+          else if (targetGamut === 'rec2020') { r = clamp(r*1.05-0.02); b = clamp(b*1.03-0.01); }
+          lut[idx++] = clamp(r); lut[idx++] = clamp(g); lut[idx++] = clamp(b);
+        }
+    return { lut, size, stack };
+  }
+
+  // Build a smart default node stack from reference analysis
+  // Approach: extract LOOK characteristics, not object colors
+  function stackFromAnalysis(analysis, look, logFmt) {
+    const A = analysis;
+    const stack = [];
+
+    stack.push({ type: 'logInput', enabled: logFmt !== 'none', params: { format: logFmt } });
+
+    if (A) {
+      // ── Step 1: Measure overall color temperature & tint from reference ──
+      // Only use the GLOBAL warmth/tint — not zone colors, which are scene-dependent
+      const temp = clamp(A.warmth * 0.8, -0.35, 0.35);
+      const tint = clamp(A.tint  * 0.8, -0.25, 0.25);
+
+      // ── Step 2: Contrast shape from luma histogram ──
+      // How punchy/flat is the reference?
+      const con = clamp((A.contrast - 0.55) * 0.45, -0.25, 0.25);
+
+      // ── Step 3: Saturation level from reference ──
+      const sat = clamp((A.avgSat - 0.25) * 0.7, -0.35, 0.35);
+
+      // ── Step 4: Exposure / gamma from reference average luma ──
+      const gamma = clamp((0.44 - A.avgLuma) * 0.55, -0.28, 0.28);
+
+      // ── Step 5: Shadow lift (faded film look) ONLY if reference blacks are lifted ──
+      // Measure if reference shadow zone is bright (lifted blacks) or deep
+      const refShadowLuma = luma(A.shadow.r, A.shadow.g, A.shadow.b);
+      const blackLift = refShadowLuma > 0.12 ? clamp((refShadowLuma - 0.08) * 0.15, 0, 0.05) : 0;
+
+      // ── Step 6: Shadow color bias — ONLY if reference has clear directional bias ──
+      // e.g. reference shadows clearly lean teal or warm
+      // We check if the shadow zone color deviates significantly from neutral
+      const S = A.shadow;
+      const smean = (S.r + S.g + S.b) / 3 || 0.001;
+      const shadowColorBias = Math.max(
+        Math.abs(S.r/smean - 1), Math.abs(S.g/smean - 1), Math.abs(S.b/smean - 1)
+      );
+      // Only apply shadow color push if there's a clear directional bias (>15% deviation)
+      const useShadowColor = shadowColorBias > 0.15;
+      const shadowLiftR = useShadowColor ? clamp((S.r/smean - 1) * 0.12, -0.07, 0.07) : 0;
+      const shadowLiftG = useShadowColor ? clamp((S.g/smean - 1) * 0.12, -0.07, 0.07) : 0;
+      const shadowLiftB = useShadowColor ? clamp((S.b/smean - 1) * 0.12, -0.07, 0.07) : 0;
+
+      stack.push({
+        type: 'primary', enabled: true,
+        params: {
+          lift: blackLift, gamma, gain: 0,
+          liftR: shadowLiftR, liftG: shadowLiftG, liftB: shadowLiftB,
+          gainR: 0, gainG: 0, gainB: 0,
+          temp, tint, con, sat,
+        }
+      });
+
+      // ── Curves: simple contrast shape only — no per-channel color push ──
+      // Per-channel curves from reference is the main cause of "wrong color"
+      // because reference object colors (red sofa, teal ocean) bleed into footage
+      // Instead: just shape the tone curve from contrast/luma analysis
+      const toeMid = 0.25 + clamp(con * 0.06, -0.04, 0.04);
+      const shMid  = 0.75 + clamp(con * 0.04, -0.03, 0.03);
+      const master = [
+        [0,    blackLift],
+        [0.25, toeMid],
+        [0.5,  0.5],
+        [0.75, shMid],
+        [1,    1],
+      ];
+
+      stack.push({
+        type: 'curves', enabled: true,
+        params: { master, r: null, g: null, b: null }  // NO per-channel curves by default
+      });
+
+      stack.push({
+        type: 'hsl', enabled: false,
+        params: { centerHue: 0.05, range: 0.1, hueShift: 0, satShift: 0, lumShift: 0, minSat: 0.05 }
+      });
+
+    } else {
+      stack.push({
+        type: 'primary', enabled: true,
+        params: { lift:0,gamma:0,gain:0,liftR:0,liftG:0,liftB:0,gainR:0,gainG:0,gainB:0,temp:0,tint:0,con:0,sat:0 }
+      });
+      stack.push({ type: 'curves', enabled: false,
+        params: { master:[[0,0],[0.5,0.5],[1,1]], r:null, g:null, b:null } });
+      stack.push({ type: 'hsl', enabled: false,
+        params: { centerHue:0.05, range:0.1, hueShift:0, satShift:0, lumShift:0, minSat:0.05 } });
+    }
+
+    stack.push({
+      type: 'look', enabled: look && look !== 'faithful',
+      params: { look: look || 'cinematic', amount: 0.45 }
+    });
+    stack.push({
+      type: 'halation', enabled: true,
+      params: { threshold: 0.68, intensity: 0.15, tint: 0.5 }
+    });
+
+    return stack;
+  }
+
+  return { analyzeReference, generateLUT, trilinear, rgb2hsl, hsl2rgb, rgb2lab, luma, clamp, lerp, LOOKS, logDecoders,
+           NODES, bakeNodeStack, curveEval, stackFromAnalysis, hueDist };
+})();
+
+</script>
+<script>
+'use strict';
+const $=id=>document.getElementById(id);
+const E=Engine;
+
+// ════════════════════════════════════════════════════════════════════════════
+// API KEY (admin only, stored locally)
+// ════════════════════════════════════════════════════════════════════════════
+function getApiKey(){try{return localStorage.getItem('halea_api_key')||''}catch(e){return ''}}
+function setApiKey(k){try{localStorage.setItem('halea_api_key',k.trim())}catch(e){}}
+function updateApiKeyUI(){
+  const has=!!getApiKey(),btn=$('apiKeyBtn');if(!btn)return;
+  btn.textContent=has?'🔑 Key ✓':'🔑 Set Key';
+  btn.style.color=has?'var(--ok)':'var(--warn)';
+}
+
+// ════════════════════════════════════════════════════════════════════════════
+// AI CREDITS SYSTEM
+// ════════════════════════════════════════════════════════════════════════════
+function getCredits(){
+  if(currentUser?.role==='admin')return 999; // admin unlimited
+  try{return parseInt(localStorage.getItem('halea_credits')||'0')}catch(e){return 0}
+}
+function addCredits(n){
+  try{
+    const cur=parseInt(localStorage.getItem('halea_credits')||'0');
+    localStorage.setItem('halea_credits',cur+n);
+    updateCreditUI();
+    showToast('✓ '+n+' AI credits added!');
+  }catch(e){}
+}
+function useCredit(){
+  if(currentUser?.role==='admin')return true;
+  const cur=getCredits();
+  if(cur<=0)return false;
+  try{localStorage.setItem('halea_credits',cur-1);updateCreditUI()}catch(e){}
+  return true;
+}
+function updateCreditUI(){
+  const c=getCredits();
+  const el=$('creditBadge');if(!el)return;
+  if(currentUser?.role==='admin'){el.textContent='∞ AI';el.style.background='rgba(179,136,255,.2)';el.style.color='var(--a4)';return}
+  el.textContent=c>0?c+' AI credits':'0 credits';
+  el.style.background=c>0?'rgba(61,216,138,.15)':'rgba(255,85,98,.15)';
+  el.style.color=c>0?'var(--ok)':'var(--err)';
+}
+
+// Generate a credit unlock code (admin use)
+function generateCreditCode(credits){
+  // Simple obfuscated code: base64 of "HALEA:credits:timestamp"
+  const payload=`HALEA:${credits}:${Date.now()}`;
+  return btoa(payload).replace(/=/g,'');
+}
+function redeemCreditCode(){
+  const code=prompt('Enter your AI Credits code:');
+  if(!code)return;
+  try{
+    const decoded=atob(code.replace(/-/g,'+').replace(/_/g,'/'));
+    const [prefix,credits]=decoded.split(':');
+    if(prefix==='HALEA'&&credits){
+      addCredits(parseInt(credits));
+      return;
+    }
+  }catch(e){}
+  showToast('Invalid code','var(--err)');
+}
+
+
+let refData=null, refAnalysis=null, footData=null, lutResult=null, afterData=null;
+let halImg=null, halPreviewMode='split';
+let currentUser=null;
+let doneLessons=new Set();
+
+// ════════════════════════════════════════════════════════════════════════════
+// PERSISTENT STORAGE (IndexedDB for files, localStorage for settings)
+// ════════════════════════════════════════════════════════════════════════════
+const DB={
+  _db:null,
+  async open(){
+    if(this._db)return this._db;
+    return new Promise((res,rej)=>{
+      const req=indexedDB.open('halea_db',1);
+      req.onupgradeneeded=e=>{
+        const db=e.target.result;
+        if(!db.objectStoreNames.contains('products'))db.createObjectStore('products',{keyPath:'id'});
+        if(!db.objectStoreNames.contains('meta'))db.createObjectStore('meta',{keyPath:'key'});
+      };
+      req.onsuccess=e=>{this._db=e.target.result;res(this._db)};
+      req.onerror=e=>rej(e);
+    });
+  },
+  async put(store,val){const db=await this.open();return new Promise((res,rej)=>{const tx=db.transaction(store,'readwrite');tx.objectStore(store).put(val);tx.oncomplete=()=>res();tx.onerror=rej})},
+  async getAll(store){const db=await this.open();return new Promise((res,rej)=>{const tx=db.transaction(store,'readonly');const r=tx.objectStore(store).getAll();r.onsuccess=()=>res(r.result);r.onerror=rej})},
+  async get(store,key){const db=await this.open();return new Promise((res,rej)=>{const tx=db.transaction(store,'readonly');const r=tx.objectStore(store).get(key);r.onsuccess=()=>res(r.result);r.onerror=rej})},
+  async del(store,key){const db=await this.open();return new Promise((res,rej)=>{const tx=db.transaction(store,'readwrite');tx.objectStore(store).delete(key);tx.oncomplete=()=>res();tx.onerror=rej})},
+};
+
+// Fallback: if IndexedDB unavailable (rare), use in-memory
+const memStore={products:[]};
+let useMemory=false;
+try{ indexedDB; }catch(e){ useMemory=true; }
+
+// ════════════════════════════════════════════════════════════════════════════
+// UTILITIES
+// ════════════════════════════════════════════════════════════════════════════
+const clamp=E.clamp, lerp=E.lerp;
+function setStatus(t,m='idle'){$('stxt').textContent=t;const d=$('sdot');d.className='sdot';if(m)d.classList.add(m)}
+function setProgress(p,t){$('progFill').style.width=p+'%';$('progSt').textContent=t}
+function showToast(msg,col='var(--ok)'){const t=$('toast');t.textContent=msg;t.style.background=col;t.classList.add('show');setTimeout(()=>t.classList.remove('show'),2800)}
+function updateTrack(sl){const pct=((sl.value-sl.min)/(sl.max-sl.min))*100;sl.style.setProperty('--fill',pct+'%')}
+function delay(ms){return new Promise(r=>setTimeout(r,ms))}
+
+// ════════════════════════════════════════════════════════════════════════════
+// NAV
+// ════════════════════════════════════════════════════════════════════════════
+document.querySelectorAll('.ntab').forEach(t=>{t.onclick=()=>goTab(t.dataset.ws)});
+function goTab(ws){
+  document.querySelectorAll('.ntab').forEach(x=>x.classList.toggle('active',x.dataset.ws===ws));
+  document.querySelectorAll('.workspace').forEach(w=>{w.classList.remove('active');w.style.display='none'});
+  const el=$('ws-'+ws);el.style.display='flex';el.classList.add('active');
+  if(ws==='shop')renderShop();
+  if(ws==='admin')renderAdmin();
+}
+document.querySelectorAll('.ctab').forEach(t=>{t.onclick=()=>{const panel=t.closest('.panel,.workspace');panel.querySelectorAll('.ctab').forEach(x=>x.classList.remove('active'));t.classList.add('active');panel.querySelectorAll('.ct-pane').forEach(p=>p.classList.toggle('active',p.id==='ct-'+t.dataset.tab))}});
+
+// ════════════════════════════════════════════════════════════════════════════
+// AUTH (local admin)
+// ════════════════════════════════════════════════════════════════════════════
+const ADMIN_CREDS={user:'admin',pass:'halea2025'};
+
+function handleUserChip(){
+  if(currentUser)logout();
+  else $('loginModal').classList.add('open');
+}
+function doLogin(){
+  const u=$('login-user').value.trim(),p=$('login-pass').value;
+  if(u===ADMIN_CREDS.user&&p===ADMIN_CREDS.pass){
+    currentUser={name:'Robbie',role:'admin'};
+    applyUser();
+    closeLogin();
+    showToast('✓ Signed in as Admin');
+  }else{
+    showToast('Wrong credentials','var(--err)');
+  }
+}
+function logout(){
+  currentUser=null;applyUser();showToast('Signed out');
+  goTab('lut');
+}
+function closeLogin(){$('loginModal').classList.remove('open')}
+function applyUser(){
+  if(currentUser){
+    $('userAv').textContent=currentUser.name[0];
+    $('userAv').className='user-av admin';
+    $('userName').textContent=currentUser.name;
+    $('userRole').textContent=currentUser.role;
+    document.querySelectorAll('.admin-only').forEach(e=>e.classList.add('show'));
+    try{localStorage.setItem('halea_user',JSON.stringify(currentUser))}catch(e){}
+  }else{
+    $('userAv').textContent='?';$('userAv').className='user-av';
+    $('userName').textContent='Guest';$('userRole').textContent='Not signed in';
+    document.querySelectorAll('.admin-only').forEach(e=>e.classList.remove('show'));
+    try{localStorage.removeItem('halea_user')}catch(e){}
+  }
+  updateCreditUI();
+  updateApiKeyUI();
+}
+
+// ════════════════════════════════════════════════════════════════════════════
+// SHOP
+// ════════════════════════════════════════════════════════════════════════════
+let shopFilter='all';
+async function getProducts(){
+  if(useMemory)return memStore.products;
+  try{return await DB.getAll('products')}catch(e){return []}
+}
+function genCreditCode(){
+  if(!currentUser||currentUser.role!=='admin'){showToast('Admin only','var(--err)');return}
+  const n=parseInt($('credit-amount').value)||10;
+  const code=generateCreditCode(n);
+  const out=$('credit-code-out'),hint=$('credit-code-hint');
+  out.textContent=code;out.style.display='block';hint.style.display='block';
+  showToast('✓ Code generated for '+n+' credits');
+}
+function copyCode(el){
+  navigator.clipboard?.writeText(el.textContent).then(()=>showToast('✓ Code copied!')).catch(()=>{});
+}
+function saveAdminKey(){
+  const k=$('admin-api-key').value.trim();
+  if(!k){showToast('Enter API key','var(--err)');return}
+  setApiKey(k);updateApiKeyUI();
+  showToast('✓ API key saved');
+  $('admin-api-key').value='';
+}
+function promptAdminKey(){
+  const k=prompt('Paste Anthropic API key (admin only):',getApiKey());
+  if(k!==null&&k.trim()){setApiKey(k.trim());updateApiKeyUI();showToast('✓ Key saved')}
+}
+
+async function renderShop(){
+  const grid=$('shopGrid');
+  const products=await getProducts();
+  let items=products;
+  if(shopFilter==='free')items=products.filter(p=>p.price===0);
+  else if(shopFilter!=='all')items=products.filter(p=>p.type===shopFilter);
+
+  if(items.length===0){
+    grid.innerHTML='<div style="grid-column:1/-1;text-align:center;padding:50px;color:var(--t3)"><div style="font-size:40px;margin-bottom:12px;opacity:.3">🛍</div><p style="font-size:12px">No products yet.'+(currentUser?' Go to Admin → Upload Product.':' Check back soon!')+'</p></div>';
+    return;
+  }
+  grid.innerHTML=items.map(p=>`
+    <div class="product-card" onclick="openProduct('${p.id}')">
+      ${p.thumb?`<img class="pc-thumb" src="${p.thumb}" alt="">`:`<div class="pc-thumb-ph">${p.type==='lut'?'🎞':p.type==='preset'?'✦':p.type==='credits'?'🤖':'📦'}</div>`}
+      <div class="pc-badge ${p.price===0?'free':'pro'}">${p.price===0?'FREE':'PRO'}</div>
+      <div class="pc-body">
+        <div class="pc-type">${p.type==='credits'?'AI CREDITS':p.type.toUpperCase()}</div>
+        <div class="pc-name">${p.name}</div>
+        <div class="pc-desc">${p.desc||''}</div>
+        <div class="pc-foot">
+          <span class="pc-price ${p.price===0?'free':''}">${p.price===0?'Free':'$'+p.price}</span>
+          <button class="pc-btn" onclick="event.stopPropagation();${p.type==='credits'?`openProduct('${p.id}')`:`downloadProduct('${p.id}')`}">${p.price===0?'Download':p.type==='credits'?'Buy':'Get'}</button>
+        </div>
+      </div>
+    </div>`).join('');
+}
+function filterShop(f,el){shopFilter=f;document.querySelectorAll('.shop-filters .pchip').forEach(c=>c.classList.remove('active'));el.classList.add('active');renderShop()}
+
+async function openProduct(id){
+  const products=await getProducts();
+  const p=products.find(x=>x.id===id);if(!p)return;
+  $('modal-title').textContent=p.name;
+
+  if(p.type==='credits'){
+    $('modal-body').innerHTML=`
+      ${p.thumb?`<img src="${p.thumb}" style="width:100%;border-radius:8px;margin-bottom:14px">`:''}
+      <h3>🤖 ${p.name}</h3>
+      <p style="color:var(--a4);font-family:var(--mono);font-size:13px">AI CREDITS · $${p.price}</p>
+      <p>${p.desc||''}</p>
+      <div class="tip">💡 After purchase, you'll receive a unique code. Click "Redeem Code" below to activate your AI credits instantly.</div>
+      <p style="font-size:11px;color:var(--t2);margin-top:10px">Each AI credit = 1 use of AI Match (Claude Vision analyzes your reference photo and builds a grade automatically).</p>
+      <p style="font-size:11px;color:var(--t2);margin-top:6px">Current balance: <strong style="color:var(--ok)">${getCredits()} credits</strong></p>
+    `;
+    $('modal-foot').innerHTML=`
+      <button class="btn btn-sm btn-ghost" onclick="closeModal()">Close</button>
+      <button class="btn btn-sm btn-ghost" onclick="redeemCreditCode();closeModal()">🎫 Redeem Code</button>
+      <a href="https://instagram.com/robbiesatriaa" target="_blank" class="btn btn-sm btn-ai" style="text-decoration:none;display:inline-block">Buy via DM</a>
+    `;
+  } else {
+    $('modal-body').innerHTML=`
+      ${p.thumb?`<img src="${p.thumb}" style="width:100%;border-radius:8px;margin-bottom:14px">`:''}
+      <h3>${p.name}</h3>
+      <p style="color:var(--accent);font-family:var(--mono);font-size:13px">${p.type.toUpperCase()} · ${p.price===0?'FREE':'$'+p.price}</p>
+      <p>${p.desc||'No description.'}</p>
+      <div class="tip">💡 ${p.price===0?'Free download — click below to get the file.':'Contact @robbiesatriaa on Instagram to purchase. After payment you will receive the file.'}</div>
+    `;
+    $('modal-foot').innerHTML=`
+      <button class="btn btn-sm btn-ghost" onclick="closeModal()">Close</button>
+      ${p.price===0
+        ?`<button class="btn btn-sm btn-accent" onclick="downloadProduct('${p.id}')">⬇ Download</button>`
+        :`<a href="https://instagram.com/robbiesatriaa" target="_blank" class="btn btn-sm btn-accent" style="text-decoration:none;display:inline-block">Contact to Buy</a>`
+      }`;
+  }
+  $('modal').classList.add('open');
+}
+async function downloadProduct(id){
+  const products=await getProducts();
+  const p=products.find(x=>x.id===id);if(!p)return;
+  if(p.price>0&&(!currentUser)){showToast('Paid item — contact @robbiesatriaa','var(--warn)');return}
+  if(!p.fileData){showToast('No file attached','var(--err)');return}
+  const a=document.createElement('a');a.href=p.fileData;a.download=(p.name.replace(/\s+/g,'_'))+(p.fileExt||'.cube');a.click();
+  showToast('✓ Downloaded: '+p.name);
+  closeModal();
+}
+
+// ════════════════════════════════════════════════════════════════════════════
+// ADMIN
+// ════════════════════════════════════════════════════════════════════════════
+let uploadThumb=null, uploadFile=null, uploadFileExt='.cube';
+
+function initAdminUploads(){
+  const tz=$('up-thumb-zone'),fz=$('up-file-zone');
+  $('up-thumb').onchange=e=>{const f=e.target.files[0];if(!f)return;const r=new FileReader();r.onload=ev=>{uploadThumb=ev.target.result;tz.querySelector('span').textContent='✓ '+f.name};r.readAsDataURL(f)};
+  $('up-file').onchange=e=>{const f=e.target.files[0];if(!f)return;uploadFileExt='.'+f.name.split('.').pop();const r=new FileReader();r.onload=ev=>{uploadFile=ev.target.result;$('up-file-label').textContent='✓ '+f.name};r.readAsDataURL(f)};
+}
+
+async function uploadProduct(){
+  const name=$('up-name').value.trim();
+  if(!name){showToast('Enter a product name','var(--err)');return}
+  if(!uploadFile){showToast('Attach a file','var(--err)');return}
+  const product={
+    id:'p_'+Date.now(),
+    name,type:$('up-type').value,desc:$('up-desc').value.trim(),
+    price:parseInt($('up-price').value)||0,
+    thumb:uploadThumb,fileData:uploadFile,fileExt:uploadFileExt,
+    created:Date.now(),
+  };
+  if(useMemory)memStore.products.push(product);
+  else await DB.put('products',product);
+  showToast('✓ Published: '+name);
+  $('up-name').value='';$('up-desc').value='';$('up-price').value='0';
+  uploadThumb=null;uploadFile=null;
+  $('up-thumb-zone').querySelector('span').textContent='📷 Drop thumbnail image';
+  $('up-file-label').textContent='📁 Drop .cube file';
+  renderAdmin();
+}
+
+async function renderAdmin(){
+  const products=await getProducts();
+  $('stat-products').textContent=products.length;
+  $('stat-free').textContent=products.filter(p=>p.price===0).length;
+  $('stat-paid').textContent=products.filter(p=>p.price>0).length;
+  const list=$('admin-product-list');
+  if(products.length===0){list.innerHTML='<p style="font-size:10px;color:var(--t3);padding:8px">No products yet.</p>';return}
+  list.innerHTML=products.map(p=>`
+    <div class="admin-item">
+      <span style="font-size:14px">${p.type==='lut'?'🎞':p.type==='preset'?'✦':'📦'}</span>
+      <div style="flex:1"><div style="font-weight:600">${p.name}</div><div style="font-size:9px;color:var(--t3)">${p.type} · ${p.price===0?'Free':'$'+p.price}</div></div>
+      <button class="ai-del" onclick="deleteProduct('${p.id}')">🗑</button>
+    </div>`).join('');
+}
+async function deleteProduct(id){
+  if(!confirm('Delete this product?'))return;
+  if(useMemory)memStore.products=memStore.products.filter(p=>p.id!==id);
+  else await DB.del('products',id);
+  renderAdmin();showToast('Deleted');
+}
+
+async function exportShopData(){
+  const products=await getProducts();
+  const blob=new Blob([JSON.stringify(products,null,2)],{type:'application/json'});
+  const a=document.createElement('a');a.href=URL.createObjectURL(blob);a.download='halea_shop_backup.json';a.click();
+  showToast('✓ Backup exported');
+}
+function importShopData(input){
+  const f=input.files[0];if(!f)return;
+  const r=new FileReader();
+  r.onload=async e=>{
+    try{
+      const products=JSON.parse(e.target.result);
+      for(const p of products){if(useMemory)memStore.products.push(p);else await DB.put('products',p)}
+      renderAdmin();showToast('✓ Imported '+products.length+' products');
+    }catch(err){showToast('Invalid backup file','var(--err)')}
+  };
+  r.readAsText(f);
+}
+
+async function seedDemoProducts(){
+  if(!confirm('Reset shop to demo products? This adds sample items.'))return;
+  const demos=[
+    {id:'demo_1',name:'Jakarta Nights',type:'lut',desc:'Neon-soaked night look with red halation. Perfect for urban Indonesia footage.',price:0,thumb:null,created:Date.now(),fileData:makeDemoLUT('cinestill'),fileExt:'.cube'},
+    {id:'demo_2',name:'Golden Tropics',type:'lut',desc:'Warm golden-hour grade tuned for tropical daylight and skin tones.',price:12,thumb:null,created:Date.now()+1,fileData:makeDemoLUT('golden'),fileExt:'.cube'},
+    {id:'demo_3',name:'Kopi & Film',type:'pack',desc:'5-LUT pack: warm vintage looks inspired by Indonesian coffee culture.',price:29,thumb:null,created:Date.now()+2,fileData:makeDemoLUT('vintage'),fileExt:'.cube'},
+    {id:'demo_4',name:'Clean Commercial',type:'preset',desc:'Natural, punchy look for product & commercial work. Neutral skin tones.',price:0,thumb:null,created:Date.now()+3,fileData:makeDemoLUT('natural'),fileExt:'.cube'},
+    {id:'demo_5',name:'AI Credits — 10 Pack',type:'credits',desc:'10 AI Match credits. Each credit = 1 use of Claude Vision grade matching. Instant code delivery via DM.',price:5,thumb:null,created:Date.now()+4,fileData:null,fileExt:null},
+    {id:'demo_6',name:'AI Credits — 25 Pack',type:'credits',desc:'25 AI Match credits. Best value for active editors. Code delivered via DM after payment.',price:10,thumb:null,created:Date.now()+5,fileData:null,fileExt:null},
+  ];
+  for(const d of demos){if(useMemory)memStore.products.push(d);else await DB.put('products',d)}
+  renderAdmin();renderShop();showToast('✓ Demo products added');
+}
+
+function makeDemoLUT(style){
+  // Generate a simple demo LUT data URL
+  const opts={cinestill:{look:'cinematic',hal:0.6},golden:{look:'warm',hal:0.3},vintage:{look:'vintage',hal:0.4},natural:{look:'natural',hal:0.1}}[style]||{look:'faithful',hal:0.2};
+  const res=E.generateLUT({size:17,look:opts.look,halMod:opts.hal,strength:0,analysis:null});
+  let s='# HALEA Demo LUT — by @robbiesatriaa\nLUT_3D_SIZE 17\n\n';
+  for(let i=0;i<res.lut.length;i+=3)s+=`${res.lut[i].toFixed(6)} ${res.lut[i+1].toFixed(6)} ${res.lut[i+2].toFixed(6)}\n`;
+  return 'data:text/plain;base64,'+btoa(s);
+}
+
+// Save current LUT studio result to "My Library" (admin shop)
+async function saveCurrentToShop(type){
+  if(!lutResult){showToast('Generate a LUT first','var(--warn)');return}
+  if(!currentUser){showToast('Sign in as admin to save','var(--warn)');$('loginModal').classList.add('open');return}
+  const name=$('lutName').value.trim()||'My LUT';
+  const {lut,size}=lutResult;
+  let s='# HALEA — '+name+' — by @robbiesatriaa\nLUT_3D_SIZE '+size+'\nDOMAIN_MIN 0.0 0.0 0.0\nDOMAIN_MAX 1.0 1.0 1.0\n\n';
+  for(let i=0;i<lut.length;i+=3)s+=`${lut[i].toFixed(6)} ${lut[i+1].toFixed(6)} ${lut[i+2].toFixed(6)}\n`;
+  const product={id:'p_'+Date.now(),name,type:'lut',desc:'Custom LUT created in HALEA Studio.',price:0,thumb:null,fileData:'data:text/plain;base64,'+btoa(s),fileExt:'.cube',created:Date.now()};
+  if(useMemory)memStore.products.push(product);else await DB.put('products',product);
+  showToast('✓ Saved to library: '+name);
+}
+
+
+// ════════════════════════════════════════════════════════════════════════════
+// LUT STUDIO — Node-based grading (PowerGrade-style), baked to .cube
+// ════════════════════════════════════════════════════════════════════════════
+let nodeStack=[];
+let activeCurveCh='master';
+let bakeTimer=null;
+
+const NODE_META={
+  logInput:{icon:'📥',name:'Log Input'},
+  primary:{icon:'🎚',name:'Primary'},
+  curves:{icon:'📈',name:'Curves'},
+  hsl:{icon:'🎯',name:'HSL Secondary'},
+  look:{icon:'🎬',name:'Look'},
+  halation:{icon:'✦',name:'Halation'},
+};
+
+function defaultNodeParams(type){
+  switch(type){
+    case 'logInput':return {format:$('logFormat').value};
+    case 'primary':return {lift:0,gamma:0,gain:0,liftR:0,liftG:0,liftB:0,gainR:0,gainG:0,gainB:0,temp:0,tint:0,con:0,sat:0};
+    case 'curves':return {master:[[0,0],[0.5,0.5],[1,1]],r:null,g:null,b:null};
+    case 'hsl':return {centerHue:0.05,range:0.1,hueShift:0,satShift:0,lumShift:0,minSat:0.05};
+    case 'look':return {look:$('lookStyle').value,amount:0.7};
+    case 'halation':return {threshold:0.6,intensity:0.25,tint:0.5};
+    default:return {};
+  }
+}
+
+function addNode(type,params,enabled=true){
+  nodeStack.push({id:'n'+Date.now()+Math.random().toString(36).slice(2,5),type,enabled,params:params||defaultNodeParams(type),expanded:false});
+  renderNodes();scheduleBake();
+}
+function removeNode(id){nodeStack=nodeStack.filter(n=>n.id!==id);renderNodes();scheduleBake()}
+function moveNode(id,dir){const i=nodeStack.findIndex(n=>n.id===id);if(i<0)return;const j=i+dir;if(j<0||j>=nodeStack.length)return;[nodeStack[i],nodeStack[j]]=[nodeStack[j],nodeStack[i]];renderNodes();scheduleBake()}
+function toggleNode(id){const n=nodeStack.find(x=>x.id===id);if(n){n.enabled=!n.enabled;renderNodes();scheduleBake()}}
+function expandNode(id){const n=nodeStack.find(x=>x.id===id);if(n){n.expanded=!n.expanded;renderNodes()}}
+
+function scheduleBake(){clearTimeout(bakeTimer);bakeTimer=setTimeout(bakeLUT,250)}
+
+document.querySelectorAll('.node-add').forEach(b=>{b.onclick=()=>addNode(b.dataset.add)});
+
+const rz=$('refZone');
+rz.ondragover=e=>{e.preventDefault();rz.classList.add('drag')};
+rz.ondragleave=()=>rz.classList.remove('drag');
+rz.ondrop=e=>{e.preventDefault();rz.classList.remove('drag');loadRef(e.dataTransfer.files[0])};
+$('refFile').onchange=e=>loadRef(e.target.files[0]);
+
+function loadRef(file){
+  if(!file||!file.type.startsWith('image/'))return;
+  setStatus('Analyzing reference...','working');
+  const img=new Image(),url=URL.createObjectURL(file);
+  img.onload=()=>{
+    const c=$('refCanvas'),cx=c.getContext('2d');
+    const sc=Math.min(1,1000/img.width);
+    c.width=Math.round(img.width*sc);c.height=Math.round(img.height*sc);
+    cx.drawImage(img,0,0,c.width,c.height);
+    refData=cx.getImageData(0,0,c.width,c.height);
+    refAnalysis=E.analyzeReference(refData);
+    $('refPreview').src=url;$('refPreview').style.display='block';
+    $('refZone').style.display='none';
+    $('refBadge').textContent='Analyzed';$('refBadge').className='ph-badge badge-ok';
+    renderAnalysis(refAnalysis);
+    drawHistogram(refData,$('histRefCanvas'));
+    $('genBtn').disabled=false;
+    $('autoMatchBtn').disabled=false;
+    setProgress(0,'Reference loaded — click 🤖 AI Match or add nodes manually');
+    setStatus('Reference ready','ok');
+  };
+  img.src=url;
+}
+
+async function autoMatch(){
+  if(!refData)return;
+
+  // Credit check
+  if(currentUser?.role!=='admin'){
+    const credits=getCredits();
+    if(credits<=0){
+      $('modal-title').textContent='🤖 AI Credits Required';
+      $('modal-body').innerHTML=`
+        <p>AI Match uses Claude Vision to read your reference photo and build a precise grade. This feature requires AI Credits.</p>
+        <div class="tip">💡 Buy AI Credits from the Shop — each credit = 1 AI Match use.</div>
+        <p style="font-size:11px;color:var(--t2);margin-top:10px">Already have a code? Click Redeem below.</p>
+      `;
+      $('modal-foot').innerHTML=`
+        <button class="btn btn-sm btn-ghost" onclick="closeModal()">Cancel</button>
+        <button class="btn btn-sm btn-ghost" onclick="redeemCreditCode();closeModal()">🎫 Redeem Code</button>
+        <button class="btn btn-sm btn-ai" onclick="closeModal();goTab('shop')">🛍 Get Credits</button>
+      `;
+      $('modal').classList.add('open');
+      return;
+    }
+  }
+
+  // API key check (admin only needs key)
+  if(currentUser?.role==='admin'&&!getApiKey()){
+    promptAdminKey();
+    if(!getApiKey())return;
+  }
+  setStatus('AI reading reference...','ai');
+  setProgress(20,'Sending to Claude Vision...');
+  $('autoMatchBtn').disabled=true;
+  $('autoMatchBtn').textContent='🤖 AI Analyzing...';
+
+  try{
+    // Convert reference canvas to base64 JPEG for Claude Vision
+    const tmpC=document.createElement('canvas');
+    tmpC.width=$('refCanvas').width;tmpC.height=$('refCanvas').height;
+    tmpC.getContext('2d').putImageData(refData,0,0);
+    const b64=tmpC.toDataURL('image/jpeg',0.85).split(',')[1];
+
+    setProgress(40,'Claude is reading the visual style...');
+
+    const res=await fetch('/api/ai',{
+      method:'POST',
+      headers:{
+        'Content-Type':'application/json',
+        'anthropic-version':'2023-06-01',
+        },
+      body:JSON.stringify({
+        model:'claude-sonnet-4-20250514',
+        max_tokens:600,
+        system:`You are a professional colorist. Analyze the visual look and color grade of the reference image. 
+Return ONLY a valid JSON object (no markdown, no explanation) with these exact keys and value ranges:
+{
+  "temp": float -0.4 to 0.4 (negative=cool/blue, positive=warm/orange),
+  "tint": float -0.3 to 0.3 (negative=green, positive=magenta),
+  "con": float -0.3 to 0.3 (contrast, negative=flat/matte, positive=punchy),
+  "sat": float -0.4 to 0.4 (saturation shift from neutral),
+  "gamma": float -0.3 to 0.3 (negative=darker mids, positive=brighter mids),
+  "blackLift": float 0 to 0.08 (0=deep blacks, 0.08=very faded/lifted),
+  "shadowTeal": float -0.15 to 0.15 (negative=warm shadows, positive=teal/blue shadows),
+  "highlightWarm": float -0.1 to 0.1 (negative=cool highlights, positive=warm highlights),
+  "look": string one of: "faithful","cinematic","warm","cool","bleach","vintage","moody","natural","teal_orange",
+  "lookAmount": float 0 to 0.6,
+  "halationIntensity": float 0 to 0.4,
+  "description": "2-3 word visual style summary"
+}
+Be precise. Base values entirely on what you visually see in the image's color grade and mood.`,
+        messages:[{
+          role:'user',
+          content:[
+            {type:'image',source:{type:'base64',media_type:'image/jpeg',data:b64}},
+            {type:'text',text:'Analyze this reference image color grade and return the JSON parameters.'}
+          ]
+        }]
+      })
+    });
+
+    if(!res.ok){
+      const errText = await res.text();
+      console.error('API Error:', res.status, errText);
+      throw new Error(`API ${res.status}: ${res.status===401?'API key salah/expired':res.status===403?'API key tidak punya akses':errText.slice(0,120)}`);
+    }
+
+    const data=await res.json();
+    if(!data.content){throw new Error('Response kosong — '+JSON.stringify(data).slice(0,100))}
+    const raw=data.content?.map(c=>c.text||'').join('').trim();
+    // Parse JSON — strip any accidental markdown fences
+    const clean=raw.replace(/```json|```/g,'').trim();
+    const p=JSON.parse(clean);
+
+    setProgress(70,'Building node stack from AI analysis...');
+    useCredit(); // deduct 1 credit on success
+
+    // Build precise node stack from AI-returned parameters
+    const logFmt=$('logFormat').value;
+    const nodes=[
+      {type:'logInput',enabled:logFmt!=='none',params:{format:logFmt}},
+      {
+        type:'primary',enabled:true,
+        params:{
+          lift: p.blackLift||0,
+          gamma: p.gamma||0,
+          gain: 0,
+          liftR: -(p.shadowTeal||0)*0.5,   // warm shadows = liftR up, liftB down
+          liftG: 0,
+          liftB:  (p.shadowTeal||0),        // teal shadows = liftB up
+          gainR:  (p.highlightWarm||0),
+          gainG: 0,
+          gainB: -(p.highlightWarm||0)*0.6,
+          temp: p.temp||0,
+          tint: p.tint||0,
+          con:  p.con||0,
+          sat:  p.sat||0,
+        }
+      },
+      {
+        type:'curves',enabled:true,
+        params:{
+          master:[
+            [0,    p.blackLift||0],
+            [0.25, 0.25+((p.con||0)*0.06)],
+            [0.5,  0.5],
+            [0.75, 0.75+((p.con||0)*0.04)],
+            [1,    1]
+          ],
+          r:null,g:null,b:null
+        }
+      },
+      {type:'hsl',enabled:false,params:{centerHue:0.05,range:0.1,hueShift:0,satShift:0,lumShift:0,minSat:0.05}},
+      {type:'look',enabled:(p.look&&p.look!=='faithful'),params:{look:p.look||'cinematic',amount:p.lookAmount||0.4}},
+      {type:'halation',enabled:(p.halationIntensity||0)>0.05,params:{threshold:0.65,intensity:p.halationIntensity||0.15,tint:0.5}},
+    ];
+    nodeStack=nodes.map(n=>({...n,id:'n'+Date.now()+Math.random().toString(36).slice(2,5),expanded:false}));
+
+    // Update analysis card with AI description
+    const descEl=$('analysisCard').querySelector('.ar:first-child span:last-child');
+    if(descEl)descEl.textContent=p.description||'AI graded';
+
+    renderNodes();scheduleBake();
+    setProgress(100,'✓ AI grade applied — '+( p.description||'done'));
+    setStatus('AI match ready','ok');
+    showToast('🤖 AI: '+( p.description||'Grade applied'));
+
+  }catch(err){
+    console.error('AI Match Error:', err, err?.message, err?.stack);
+    // Show actual error to user so we can debug
+    setProgress(0, '✗ Error: ' + (err?.message || String(err)));
+    showToast('Error: ' + (err?.message || 'unknown — check console'), 'var(--err)');
+    // Fallback to pixel analysis
+    setTimeout(()=>{
+      const fallbackNodes=E.stackFromAnalysis(refAnalysis,$('lookStyle').value,$('logFormat').value)
+        .map(n=>({...n,id:'n'+Date.now()+Math.random().toString(36).slice(2,5),expanded:false}));
+      nodeStack=fallbackNodes;
+      renderNodes();scheduleBake();
+      setProgress(100,'Matched (pixel fallback)');
+      setStatus('Ready','ok');
+    },1500);
+  }
+
+  $('autoMatchBtn').disabled=false;
+  $('autoMatchBtn').textContent='✨ Auto-Match from Reference';
+}
+$('autoMatchBtn').onclick=autoMatch;
+
+function renderAnalysis(a){
+  const toHex=(o)=>'#'+[o.r,o.g,o.b].map(v=>Math.round(clamp(v)*255).toString(16).padStart(2,'0')).join('');
+  const warmth=a.warmth>0.02?'Warm':a.warmth<-0.02?'Cool':'Neutral';
+  const con=a.contrast>0.75?'High':a.contrast<0.5?'Low':'Medium';
+  const sat=a.avgSat>0.35?'Vivid':a.avgSat<0.15?'Muted':'Balanced';
+  $('analysisCard').innerHTML=`
+    <div class="ar"><span>Mood</span><span>${warmth} · ${sat}</span></div>
+    <div class="ar"><span>Contrast</span><span>${con} (${Math.round(a.contrast*100)}%)</span></div>
+    <div class="ar"><span>Avg Luma</span><span>${Math.round(a.avgLuma*100)}%</span></div>
+    <div class="ar"><span>Saturation</span><span>${Math.round(a.avgSat*100)}%</span></div>
+    <div class="ar"><span>Skin tones</span><span>${a.hasSkin?'Detected ✓':'None'}</span></div>
+    <div class="zone-bars">
+      <div class="zone-bar" style="background:${toHex(a.shadow)}" title="Shadows"></div>
+      <div class="zone-bar" style="background:${toHex(a.mid)}" title="Midtones"></div>
+      <div class="zone-bar" style="background:${toHex(a.highlight)}" title="Highlights"></div>
+    </div>
+    <div style="display:flex;justify-content:space-between;font-size:8px;color:var(--t3)"><span>SHADOW</span><span>MID</span><span>HIGH</span></div>
+  `;
+  // palette
+  const pal=$('palette');pal.innerHTML='';
+  const d=refData.data,step=Math.max(1,Math.floor(d.length/4/120)),buckets={};
+  for(let i=0;i<d.length;i+=4*step){const r=Math.round(d[i]/28)*28,g=Math.round(d[i+1]/28)*28,b=Math.round(d[i+2]/28)*28;buckets[`${r},${g},${b}`]=(buckets[`${r},${g},${b}`]||0)+1}
+  Object.entries(buckets).sort((a,b)=>b[1]-a[1]).slice(0,14).forEach(([k])=>{const[r,g,b]=k.split(',');const sw=document.createElement('div');sw.className='sw-swatch';sw.style.background=`rgb(${r},${g},${b})`;pal.appendChild(sw)});
+  $('analysisWrap').style.display='block';
+}
+
+const fz=$('footageZone');
+fz.ondragover=e=>{e.preventDefault();fz.classList.add('drag')};
+fz.ondragleave=()=>fz.classList.remove('drag');
+fz.ondrop=e=>{e.preventDefault();fz.classList.remove('drag');loadFootage(e.dataTransfer.files[0])};
+$('footageFile').onchange=e=>loadFootage(e.target.files[0]);
+
+function loadFootage(file){
+  if(!file||!file.type.startsWith('image/'))return;
+  const img=new Image(),url=URL.createObjectURL(file);
+  img.onload=()=>{
+    const c=$('footageCanvas'),cx=c.getContext('2d');
+    const sc=Math.min(1,1000/img.width);
+    c.width=Math.round(img.width*sc);c.height=Math.round(img.height*sc);
+    cx.drawImage(img,0,0,c.width,c.height);
+    footData=cx.getImageData(0,0,c.width,c.height);
+    drawHistogram(footData,$('histFootCanvas'));$('histFootWrap').style.display='block';
+    if(lutResult)applyPreview();
+  };
+  img.src=url;
+}
+
+function bakeLUT(){
+  if(nodeStack.length===0){setProgress(0,'Add a node or Auto-Match first');return}
+  setStatus('Baking LUT...','working');
+  const size=parseInt($('lutSize').value);
+  const res=E.bakeNodeStack(nodeStack,{size,targetGamut:$('targetGamut').value});
+  lutResult={...res,logFmt:$('logFormat').value,look:$('lookStyle').value,strength:1};
+  drawCurves(lutResult);
+  const logN={none:'Rec.709',slog2:'S-Log2',slog3:'S-Log3',flog:'F-Log',flog2:'F-Log2',dlog:'D-Log',dlogm:'D-Log M',iphone:'Apple Log',clog2:'C-Log2',clog3:'C-Log3',vlog:'V-Log',log3g10:'LogC3'};
+  const tgtN={rec709:'Rec.709',rec2020:'Rec.2020',p3:'DCI-P3'};
+  const activeNodes=nodeStack.filter(n=>n.enabled).length;
+  $('m-size').textContent=size+'³';$('m-input').textContent=logN[$('logFormat').value];
+  $('m-output').textContent=tgtN[$('targetGamut').value];$('m-look').textContent=activeNodes+' nodes';
+  $('m-str').textContent='Baked';
+  ['dl-cube','dl-3dl','dl-lut'].forEach(id=>$(id).classList.remove('disabled'));
+  $('exportBadge').textContent='Ready';$('exportBadge').className='ph-badge badge-ok';
+  setProgress(100,'✓ LUT baked from '+activeNodes+' nodes');setStatus('LUT ready','ok');
+  if(footData)applyPreview();
+}
+$('genBtn').onclick=()=>{$('genBtn').disabled=true;setProgress(50,'Baking...');setTimeout(()=>{bakeLUT();$('genBtn').disabled=false;showToast('✓ LUT baked')},30)};
+
+// ── NODE RENDERING ──
+function renderNodes(){
+  const wrap=$('node-stack');
+  if(nodeStack.length===0){wrap.innerHTML='<div style="font-size:10px;color:var(--t3);text-align:center;padding:14px;border:1px dashed var(--b1);border-radius:var(--r)">No nodes yet. Click + above or Auto-Match.</div>';return}
+  wrap.innerHTML='';
+  nodeStack.forEach((n,i)=>{
+    const meta=NODE_META[n.type];
+    const div=document.createElement('div');
+    div.className='node'+(n.enabled?'':' disabled')+(n.expanded?' expanded':'');
+    div.innerHTML=`
+      <div class="node-head">
+        <div class="node-arrows"><span class="node-arrow" data-mv="up">▲</span><span class="node-arrow" data-mv="dn">▼</span></div>
+        <span class="node-dot"></span><span class="node-icon">${meta.icon}</span>
+        <span class="node-name">${meta.name}</span>
+        <div class="node-toggle ${n.enabled?'on':''}" data-act="toggle"></div>
+        <span class="node-del" data-act="del">✕</span>
+      </div>
+      <div class="node-body" data-body></div>`;
+    // events
+    div.querySelector('.node-head').onclick=e=>{if(e.target.closest('[data-act]')||e.target.closest('[data-mv]'))return;expandNode(n.id)};
+    div.querySelector('[data-act="toggle"]').onclick=e=>{e.stopPropagation();toggleNode(n.id)};
+    div.querySelector('[data-act="del"]').onclick=e=>{e.stopPropagation();removeNode(n.id)};
+    div.querySelector('[data-mv="up"]').onclick=e=>{e.stopPropagation();moveNode(n.id,-1)};
+    div.querySelector('[data-mv="dn"]').onclick=e=>{e.stopPropagation();moveNode(n.id,1)};
+    if(n.expanded)renderNodeBody(div.querySelector('[data-body]'),n);
+    wrap.appendChild(div);
+  });
+}
+
+function nodeSlider(label,min,max,val,step,oninput){
+  const w=document.createElement('div');w.className='sw';
+  w.innerHTML=`<span class="sn">${label}</span><input type="range" min="${min}" max="${max}" step="${step||1}" value="${val}"><span class="sv"></span>`;
+  const sl=w.querySelector('input'),sv=w.querySelector('.sv');
+  const fmt=v=>step<1?(+v).toFixed(2):v;
+  sv.textContent=fmt(val);updateTrack(sl);
+  sl.oninput=()=>{sv.textContent=fmt(sl.value);updateTrack(sl);oninput(parseFloat(sl.value));scheduleBake()};
+  return w;
+}
+
+function renderNodeBody(body,n){
+  body.innerHTML='';const p=n.params;
+  if(n.type==='logInput'){
+    const sel=document.createElement('select');
+    sel.innerHTML=`<option value="none">None / Rec.709</option><option value="slog2">S-Log2</option><option value="slog3">S-Log3</option><option value="flog">F-Log</option><option value="flog2">F-Log2</option><option value="dlog">D-Log</option><option value="dlogm">D-Log M</option><option value="iphone">Apple Log</option><option value="clog2">C-Log2</option><option value="clog3">C-Log3</option><option value="vlog">V-Log</option><option value="log3g10">LogC3</option>`;
+    sel.value=p.format;sel.onchange=()=>{p.format=sel.value;scheduleBake()};
+    body.appendChild(sel);
+  }
+  else if(n.type==='primary'){
+    body.appendChild(nodeSlider('Lift',-0.5,0.5,p.lift,0.01,v=>p.lift=v));
+    body.appendChild(nodeSlider('Gamma',-0.6,0.6,p.gamma,0.01,v=>p.gamma=v));
+    body.appendChild(nodeSlider('Gain',-0.5,0.5,p.gain,0.01,v=>p.gain=v));
+    body.appendChild(nodeSlider('Temp',-1,1,p.temp,0.01,v=>p.temp=v));
+    body.appendChild(nodeSlider('Tint',-1,1,p.tint,0.01,v=>p.tint=v));
+    body.appendChild(nodeSlider('Contrast',-0.8,0.8,p.con,0.01,v=>p.con=v));
+    body.appendChild(nodeSlider('Saturation',-1,1,p.sat,0.01,v=>p.sat=v));
+    const hd=document.createElement('div');hd.style.cssText='font-size:8px;color:var(--t3);margin-top:4px;font-weight:700;letter-spacing:.1em';hd.textContent='PER-CHANNEL GAIN';body.appendChild(hd);
+    body.appendChild(nodeSlider('Red',-0.5,0.5,p.gainR,0.01,v=>p.gainR=v));
+    body.appendChild(nodeSlider('Green',-0.5,0.5,p.gainG,0.01,v=>p.gainG=v));
+    body.appendChild(nodeSlider('Blue',-0.5,0.5,p.gainB,0.01,v=>p.gainB=v));
+  }
+  else if(n.type==='curves'){
+    if(!p.master)p.master=[[0,0],[0.5,0.5],[1,1]];
+    const ed=document.createElement('div');ed.className='curve-editor';
+    ed.innerHTML=`<div class="curve-tabs">
+      <div class="curve-tab active" data-ch="master">RGB</div>
+      <div class="curve-tab" data-ch="r">R</div>
+      <div class="curve-tab" data-ch="g">G</div>
+      <div class="curve-tab" data-ch="b">B</div>
+    </div><div class="curve-canvas-wrap"><canvas class="curve-edit"></canvas></div>
+    <div class="curve-hint">click add · drag move · dbl-click delete</div>`;
+    body.appendChild(ed);
+    const canvas=ed.querySelector('canvas');
+    activeCurveCh='master';
+    ed.querySelectorAll('.curve-tab').forEach(t=>t.onclick=()=>{ed.querySelectorAll('.curve-tab').forEach(x=>x.classList.remove('active'));t.classList.add('active');activeCurveCh=t.dataset.ch;if(!p[activeCurveCh])p[activeCurveCh]=[[0,0],[1,1]];drawCurveEditor(canvas,p)});
+    setTimeout(()=>drawCurveEditor(canvas,p),0);
+    setupCurveEditor(canvas,p,n);
+  }
+  else if(n.type==='hsl'){
+    const presets=document.createElement('div');presets.className='hue-presets';
+    [['Skin',0.05],['Sky',0.6],['Foliage',0.28],['Red',0.0],['Orange',0.08],['Cyan',0.5]].forEach(([nm,h])=>{const b=document.createElement('div');b.className='hue-preset';b.textContent=nm;b.onclick=()=>{p.centerHue=h;renderNodeBody(body,n);scheduleBake()};presets.appendChild(b)});
+    body.appendChild(presets);
+    body.appendChild(nodeSlider('Center Hue',0,1,p.centerHue,0.01,v=>p.centerHue=v));
+    body.appendChild(nodeSlider('Range',0.02,0.5,p.range,0.01,v=>p.range=v));
+    body.appendChild(nodeSlider('Hue Shift',-0.2,0.2,p.hueShift,0.005,v=>p.hueShift=v));
+    body.appendChild(nodeSlider('Sat Shift',-1,1,p.satShift,0.01,v=>p.satShift=v));
+    body.appendChild(nodeSlider('Lum Shift',-0.5,0.5,p.lumShift,0.01,v=>p.lumShift=v));
+  }
+  else if(n.type==='look'){
+    const sel=document.createElement('select');
+    sel.innerHTML=Object.keys(E.LOOKS).map(k=>`<option value="${k}">${k}</option>`).join('');
+    sel.value=p.look;sel.onchange=()=>{p.look=sel.value;scheduleBake()};
+    body.appendChild(sel);
+    body.appendChild(nodeSlider('Amount',0,1,p.amount,0.01,v=>p.amount=v));
+  }
+  else if(n.type==='halation'){
+    body.appendChild(nodeSlider('Threshold',0.2,0.95,p.threshold,0.01,v=>p.threshold=v));
+    body.appendChild(nodeSlider('Intensity',0,1,p.intensity,0.01,v=>p.intensity=v));
+    body.appendChild(nodeSlider('Red Tint',0,1,p.tint,0.01,v=>p.tint=v));
+  }
+}
+
+// ── CURVE EDITOR ──
+function drawCurveEditor(canvas,p){
+  const dpr=devicePixelRatio||1,w=canvas.offsetWidth||280,h=160;
+  canvas.width=w*dpr;canvas.height=h*dpr;const cx=canvas.getContext('2d');cx.scale(dpr,dpr);
+  cx.fillStyle='#1b1b24';cx.fillRect(0,0,w,h);
+  cx.strokeStyle='#262630';cx.lineWidth=.5;
+  for(let i=1;i<4;i++){cx.beginPath();cx.moveTo(w*i/4,0);cx.lineTo(w*i/4,h);cx.stroke();cx.beginPath();cx.moveTo(0,h*i/4);cx.lineTo(w,h*i/4);cx.stroke()}
+  cx.strokeStyle='#33333f';cx.beginPath();cx.moveTo(0,h);cx.lineTo(w,0);cx.stroke();
+  const pts=p[activeCurveCh]||[[0,0],[1,1]];
+  const col={master:'#cfcfe0',r:'#ff4455',g:'#44dd66',b:'#4488ff'}[activeCurveCh];
+  cx.strokeStyle=col;cx.lineWidth=1.6;cx.beginPath();
+  for(let i=0;i<=60;i++){const x=i/60,y=E.curveEval(pts,x);const px=x*w,py=(1-y)*h;i===0?cx.moveTo(px,py):cx.lineTo(px,py)}
+  cx.stroke();
+  pts.forEach(([x,y])=>{cx.fillStyle=col;cx.beginPath();cx.arc(x*w,(1-y)*h,4,0,7);cx.fill();cx.strokeStyle='#000';cx.lineWidth=1;cx.stroke()});
+}
+function setupCurveEditor(canvas,p,n){
+  let dragIdx=-1;
+  const getXY=e=>{const r=canvas.getBoundingClientRect();const cx=(e.clientX||e.touches[0].clientX)-r.left,cy=(e.clientY||e.touches[0].clientY)-r.top;return[clamp(cx/r.width),clamp(1-cy/r.height)]};
+  const findPt=(x,y)=>{const pts=p[activeCurveCh];for(let i=0;i<pts.length;i++){if(Math.abs(pts[i][0]-x)<0.05&&Math.abs(pts[i][1]-y)<0.06)return i}return -1};
+  canvas.onmousedown=e=>{const[x,y]=getXY(e);if(!p[activeCurveCh])p[activeCurveCh]=[[0,0],[1,1]];let idx=findPt(x,y);if(idx<0){p[activeCurveCh].push([x,y]);p[activeCurveCh].sort((a,b)=>a[0]-b[0]);idx=p[activeCurveCh].findIndex(pt=>pt[0]===x)}dragIdx=idx;drawCurveEditor(canvas,p)};
+  canvas.onmousemove=e=>{if(dragIdx<0)return;const[x,y]=getXY(e);const pts=p[activeCurveCh];if(dragIdx>0&&dragIdx<pts.length-1)pts[dragIdx][0]=x;pts[dragIdx][1]=y;pts.sort((a,b)=>a[0]-b[0]);dragIdx=pts.findIndex(pt=>pt[1]===y);drawCurveEditor(canvas,p);scheduleBake()};
+  canvas.onmouseup=()=>dragIdx=-1;canvas.onmouseleave=()=>dragIdx=-1;
+  canvas.ondblclick=e=>{const[x,y]=getXY(e);const idx=findPt(x,y);if(idx>0&&idx<p[activeCurveCh].length-1){p[activeCurveCh].splice(idx,1);drawCurveEditor(canvas,p);scheduleBake()}};
+}
+
+function applyPreview(){
+  if(!footData||!lutResult)return;
+  const {lut,size}=lutResult,src=footData.data,out=new Uint8ClampedArray(src.length);
+  for(let i=0;i<src.length;i+=4){const[nr,ng,nb]=E.trilinear(src[i],src[i+1],src[i+2],lut,size);out[i]=nr;out[i+1]=ng;out[i+2]=nb;out[i+3]=255}
+  afterData=new ImageData(out,footData.width,footData.height);
+  const bc=$('beforeCanvas'),ac=$('afterCanvas');
+  bc.width=footData.width;bc.height=footData.height;ac.width=footData.width;ac.height=footData.height;
+  bc.getContext('2d').putImageData(footData,0,0);ac.getContext('2d').putImageData(afterData,0,0);
+  $('noFootage').style.display='none';$('compareRow').style.display='grid';
+  drawHistogram(afterData,$('histAfterCanvas'));$('histAfterWrap').style.display='block';
+}
+
+function drawCurves(ld){
+  const c=$('curveCanvas'),cx=c.getContext('2d'),dpr=devicePixelRatio||1,w=c.offsetWidth||400,h=180;
+  c.width=w*dpr;c.height=h*dpr;cx.scale(dpr,dpr);
+  cx.fillStyle='#14141b';cx.fillRect(0,0,w,h);cx.strokeStyle='#262630';cx.lineWidth=.5;
+  for(let i=1;i<4;i++){const x=w*i/4,y=h*i/4;cx.beginPath();cx.moveTo(x,0);cx.lineTo(x,h);cx.stroke();cx.beginPath();cx.moveTo(0,y);cx.lineTo(w,y);cx.stroke()}
+  const{lut,size}=ld,mid=Math.floor(size/2);
+  [{ch:0,col:'rgba(255,68,85,.85)'},{ch:1,col:'rgba(68,221,102,.85)'},{ch:2,col:'rgba(68,136,255,.85)'},{ch:-1,col:'rgba(136,136,168,.9)'}].forEach(({ch,col})=>{
+    cx.strokeStyle=col;cx.lineWidth=ch===-1?1.5:1.2;cx.beginPath();
+    for(let i=0;i<size;i++){let v;if(ch>=0)v=lut[(mid*size*size+mid*size+i)*3+ch];else{const r=lut[(mid*size*size+mid*size+i)*3],g=lut[(mid*size*size+mid*size+i)*3+1],b=lut[(mid*size*size+mid*size+i)*3+2];v=.2126*r+.7152*g+.0722*b}const x=i/(size-1)*w,y=(1-v)*h;i===0?cx.moveTo(x,y):cx.lineTo(x,y)}
+    cx.stroke();
+  });
+  $('curveEmpty').style.display='none';
+}
+
+function drawHistogram(imgData,canvas){
+  if(!canvas)return;const d=imgData.data,bins=256,rH=new Array(bins).fill(0),gH=new Array(bins).fill(0),bH=new Array(bins).fill(0);
+  for(let i=0;i<d.length;i+=4){rH[d[i]]++;gH[d[i+1]]++;bH[d[i+2]]++}
+  const mx=Math.max(...rH,...gH,...bH)||1,dpr=devicePixelRatio||1,w=canvas.offsetWidth||260,h=70;
+  canvas.width=w*dpr;canvas.height=h*dpr;const cx=canvas.getContext('2d');cx.scale(dpr,dpr);
+  cx.fillStyle='#1b1b24';cx.fillRect(0,0,w,h);cx.globalCompositeOperation='lighter';
+  [[rH,'rgba(255,68,85,.6)'],[gH,'rgba(68,221,102,.6)'],[bH,'rgba(68,136,255,.6)']].forEach(([hist,col])=>{cx.fillStyle=col;for(let i=0;i<bins;i++){const bh=Math.round(hist[i]/mx*h);cx.fillRect(i/bins*w,h-bh,w/bins+.5,bh)}});
+  cx.globalCompositeOperation='source-over';
+}
+
+function downloadLUT(fmt){
+  if(!lutResult)return;
+  const name=$('lutName').value.trim()||'HALEA_LUT';const{lut,size,logFmt,look,strength}=lutResult;
+  const logN={none:'Rec.709',slog2:'S-Log2',slog3:'S-Log3',flog:'F-Log',flog2:'F-Log2',dlog:'D-Log',dlogm:'D-Log M',iphone:'Apple Log',clog2:'C-Log2',clog3:'C-Log3',vlog:'V-Log',log3g10:'LogC3'};
+  let content,filename;
+  if(fmt==='cube'||fmt==='lut'){filename=name+(fmt==='lut'?'.lut':'.cube');let s=`# HALEA — by @robbiesatriaa\n# Source: ${logN[logFmt]} · Style: ${look} · Strength: ${Math.round(strength*100)}%\n\nLUT_3D_SIZE ${size}\nDOMAIN_MIN 0.0 0.0 0.0\nDOMAIN_MAX 1.0 1.0 1.0\n\n`;for(let i=0;i<lut.length;i+=3)s+=`${lut[i].toFixed(6)} ${lut[i+1].toFixed(6)} ${lut[i+2].toFixed(6)}\n`;content=s}
+  else if(fmt==='3dl'){filename=name+'.3dl';let s=`3DMESH\nMesh 1 12\n0 ${(size-1)*4} ${(size-1)*4} ${(size-1)*4}\n\n`;for(let i=0;i<lut.length;i+=3)s+=`${Math.round(lut[i]*4095)} ${Math.round(lut[i+1]*4095)} ${Math.round(lut[i+2]*4095)}\n`;content=s}
+  const a=document.createElement('a');a.href=URL.createObjectURL(new Blob([content],{type:'text/plain'}));a.download=filename;a.click();
+  showToast('✓ Downloaded: '+filename);
+}
+
+// ════════════════════════════════════════════════════════════════════════════
+// HALATION LAB
+// ════════════════════════════════════════════════════════════════════════════
+const HAL_DEFAULTS={halationOn:true,ht:62,hr:16,hi:45,lb:10,gt:50,toneOn:true,exp:5,con:8,hl:15,sh:8,wh:18,bl:0,colorOn:true,sat:-8,vib:-5,tmp:0,tnt:0,ssh:0,shi:0,grainOn:true,gr:14,gs:1.5,vigOn:true,va:38,vf:68,fadeOn:true,bk:8,wc:5};
+let HP={...HAL_DEFAULTS};
+const HAL_PRESETS={
+  'Kodak V3':{ht:55,hr:20,hi:55,lb:12,gt:60,exp:8,con:6,hl:22,sh:14,wh:16,bl:0,sat:-10,vib:-8,tmp:15,tnt:3,ssh:-10,shi:15,gr:14,gs:1.6,va:32,vf:70,bk:6,wc:4},
+  'Fuji 400H':{ht:68,hr:11,hi:28,lb:5,gt:45,exp:3,con:0,hl:10,sh:18,wh:8,bl:0,sat:8,vib:6,tmp:-8,tnt:-4,ssh:5,shi:-8,gr:10,gs:1.2,va:22,vf:60,bk:8,wc:3},
+  'CineStill':{ht:46,hr:24,hi:75,lb:18,gt:75,exp:16,con:10,hl:36,sh:5,wh:42,bl:-5,sat:-18,vib:-14,tmp:20,tnt:8,ssh:-15,shi:20,gr:20,gs:2.0,va:52,vf:72,bk:4,wc:6},
+  'LomoChrome':{ht:72,hr:9,hi:22,lb:4,gt:40,exp:-6,con:14,hl:8,sh:15,wh:4,bl:5,sat:20,vib:18,tmp:-12,tnt:6,ssh:10,shi:-10,gr:8,gs:1.1,va:42,vf:65,bk:10,wc:2},
+  'Bleach':{ht:52,hr:16,hi:45,lb:9,gt:50,exp:10,con:22,hl:20,sh:-8,wh:26,bl:-15,sat:-40,vib:-30,tmp:0,tnt:0,ssh:0,shi:0,gr:16,gs:1.8,va:40,vf:68,bk:2,wc:8},
+  'Neon Noir':{ht:44,hr:28,hi:82,lb:20,gt:80,exp:22,con:18,hl:32,sh:-4,wh:38,bl:-18,sat:-35,vib:-20,tmp:8,tnt:-12,ssh:-20,shi:18,gr:22,gs:2.2,va:60,vf:80,bk:2,wc:10},
+  'Golden Hr':{ht:65,hr:14,hi:38,lb:7,gt:65,exp:14,con:4,hl:18,sh:20,wh:14,bl:4,sat:10,vib:14,tmp:28,tnt:-6,ssh:8,shi:20,gr:9,gs:1.3,va:28,vf:62,bk:10,wc:3},
+  'Matte Film':{ht:60,hr:12,hi:30,lb:8,gt:50,exp:0,con:-5,hl:5,sh:12,wh:0,bl:0,sat:-15,vib:-10,tmp:5,tnt:2,ssh:5,shi:5,gr:18,gs:1.9,va:35,vf:65,bk:18,wc:12},
+  'Teal Orange':{ht:50,hr:18,hi:50,lb:11,gt:55,exp:8,con:16,hl:20,sh:0,wh:20,bl:-8,sat:5,vib:8,tmp:10,tnt:-5,ssh:-30,shi:25,gr:12,gs:1.5,va:45,vf:70,bk:5,wc:5},
+};
+const HAL_TOGGLES=[{key:'halationOn',label:'Halation'},{key:'toneOn',label:'Tone'},{key:'colorOn',label:'Color'},{key:'grainOn',label:'Grain'},{key:'vigOn',label:'Vignette'},{key:'fadeOn',label:'Fade'}];
+const HAL_SL=[['h-ht','ht',v=>v+'%'],['h-hr','hr',v=>v+'px'],['h-hi','hi',v=>v+'%'],['h-lb','lb',v=>v+'px'],['h-gt','gt',v=>v],['h-exp','exp',v=>(v>0?'+':'')+v],['h-con','con',v=>(v>0?'+':'')+v],['h-hl','hl',v=>(v>0?'+':'')+v],['h-sh','sh',v=>(v>0?'+':'')+v],['h-wh','wh',v=>(v>0?'+':'')+v],['h-bl','bl',v=>(v>0?'+':'')+v],['h-sat','sat',v=>(v>0?'+':'')+v],['h-vib','vib',v=>(v>0?'+':'')+v],['h-tmp','tmp',v=>(v>0?'+':'')+v],['h-tnt','tnt',v=>(v>0?'+':'')+v],['h-ssh','ssh',v=>(v>0?'+':'')+v],['h-shi','shi',v=>(v>0?'+':'')+v],['h-gr','gr',v=>v+'%'],['h-gs','gs',v=>parseFloat(v).toFixed(1)],['h-va','va',v=>v+'%'],['h-vf','vf',v=>v+'%'],['h-bk','bk',v=>v],['h-wc','wc',v=>v]];
+
+(()=>{const row=$('hal-presets');Object.keys(HAL_PRESETS).forEach(n=>{const b=document.createElement('div');b.className='pchip';b.textContent=n;b.onclick=()=>{Object.assign(HP,HAL_PRESETS[n]);syncHal();document.querySelectorAll('#hal-presets .pchip').forEach(x=>x.classList.remove('active'));b.classList.add('active');$('hal-info-preset').textContent=n;halRedraw()};row.appendChild(b)})})();
+(()=>{const w=$('hal-toggles');HAL_TOGGLES.forEach(t=>{const c=document.createElement('div');c.className='tgl'+(HP[t.key]?' on':'');c.textContent=t.label;c.dataset.key=t.key;c.onclick=()=>{HP[t.key]=!HP[t.key];c.classList.toggle('on',HP[t.key]);halRedraw()};w.appendChild(c)})})();
+HAL_SL.forEach(([id,key,fmt])=>{const sl=$(id),vl=$('hv-'+id.slice(2));if(!sl||!vl)return;sl.value=HP[key];vl.textContent=fmt(HP[key]);updateTrack(sl);sl.oninput=()=>{HP[key]=parseFloat(sl.value);vl.textContent=fmt(sl.value);updateTrack(sl);document.querySelectorAll('#hal-presets .pchip').forEach(x=>x.classList.remove('active'));$('hal-info-preset').textContent='Custom';halRedraw()}});
+function syncHal(){HAL_SL.forEach(([id,key,fmt])=>{const sl=$(id),vl=$('hv-'+id.slice(2));if(!sl||!vl)return;sl.value=HP[key];vl.textContent=fmt(HP[key]);updateTrack(sl)});HAL_TOGGLES.forEach(t=>{const c=document.querySelector(`#hal-toggles [data-key="${t.key}"]`);if(c)c.classList.toggle('on',HP[t.key])})}
+
+const haldz=$('halDropzone');
+haldz.ondragover=e=>{e.preventDefault();haldz.classList.add('drag')};haldz.ondragleave=()=>haldz.classList.remove('drag');
+haldz.ondrop=e=>{e.preventDefault();haldz.classList.remove('drag');halLoad(e.dataTransfer.files[0])};
+$('halFile').onchange=e=>halLoad(e.target.files[0]);
+function halLoad(file){if(!file||!file.type.startsWith('image/'))return;const r=new FileReader();r.onload=e=>{const img=new Image();img.onload=()=>{halImg=img;$('halThumb').src=e.target.result;$('halThumb').style.display='block';$('halDropzone').style.display='none';$('halBadge').textContent=img.width+'×'+img.height;$('halBadge').className='ph-badge badge-ok';$('hal-info-size').textContent=img.width+'×'+img.height;$('hal-no-img').style.display='none';$('hal-split').style.display='block';halRedraw()};img.src=e.target.result};r.readAsDataURL(file)}
+
+function halRedraw(){
+  if(!halImg)return;
+  const wrap=$('hal-preview-wrap'),maxW=wrap.clientWidth-40,maxH=wrap.clientHeight-40;
+  const scale=Math.min(maxW/halImg.width,maxH/halImg.height,1),W=Math.round(halImg.width*scale),H=Math.round(halImg.height*scale);
+  if(halPreviewMode==='split'){
+    ['hal-before','hal-after'].forEach(id=>{const c=$(id);c.width=W;c.height=H;c.style.width=W+'px';c.style.height=H+'px'});
+    $('hal-before').getContext('2d').drawImage(halImg,0,0,W,H);
+    halProcess($('hal-after').getContext('2d'),W,H);
+    $('hal-split').style.display='block';$('hal-single').style.display='none';
+  }else{
+    const cs=$('hal-single');cs.width=W;cs.height=H;const ctx=cs.getContext('2d');
+    if(halPreviewMode==='before')ctx.drawImage(halImg,0,0,W,H);else halProcess(ctx,W,H);
+    cs.style.display='block';$('hal-split').style.display='none';
+  }
+}
+
+function halProcess(ctx,W,H){
+  ctx.drawImage(halImg,0,0,W,H);
+  const id=ctx.getImageData(0,0,W,H),d=id.data,p=HP;
+  for(let i=0;i<d.length;i+=4){
+    let r=d[i]/255,g=d[i+1]/255,b=d[i+2]/255;
+    if(p.fadeOn){const bl=p.bk/600,wc=p.wc/600;r=bl+r*(1-bl-wc);g=bl+g*(1-bl-wc);b=bl+b*(1-bl-wc)}
+    if(p.toneOn){
+      r*=Math.pow(2,p.exp/100*2);g*=Math.pow(2,p.exp/100*2);b*=Math.pow(2,p.exp/100*2);
+      if(p.con!==0){const c=p.con/200;r=.5+(r-.5)*(1+c*2);g=.5+(g-.5)*(1+c*2);b=.5+(b-.5)*(1+c*2)}
+      const hl=p.hl/300,sh=p.sh/300,wv=p.wh/300,bv=p.bl/500;
+      r+=hl*r*(1-r)+sh*(1-r)*(1-r)+wv*r*r+bv;g+=hl*g*(1-g)+sh*(1-g)*(1-g)+wv*g*g+bv;b+=hl*b*(1-b)+sh*(1-b)*(1-b)+wv*b*b+bv;
+    }
+    if(p.colorOn){
+      const tv=p.tmp/400,tn=p.tnt/400;r+=tv;b-=tv;g-=tn;r+=tn*.3;b+=tn*.3;
+      // split toning
+      const L=.299*r+.587*g+.114*b;
+      if(p.ssh!==0){const f=(1-L)*(p.ssh/600);r-=f;b+=f}
+      if(p.shi!==0){const f=L*(p.shi/600);r+=f;b-=f}
+      const lm=.299*r+.587*g+.114*b,sv=p.sat/200;
+      r=lm+(r-lm)*(1+sv);g=lm+(g-lm)*(1+sv);b=lm+(b-lm)*(1+sv);
+      const lm2=.299*r+.587*g+.114*b,st2=Math.max(r,g,b)-Math.min(r,g,b),vb=(p.vib/300)*(1-st2);
+      r=lm2+(r-lm2)*(1+vb);g=lm2+(g-lm2)*(1+vb);b=lm2+(b-lm2)*(1+vb);
+    }
+    if(p.halationOn){const lh=.299*r+.587*g+.114*b,thr=p.ht/100;if(lh>thr){const fac=Math.pow((lh-thr)/(1-thr),1.4)*(p.hi/100),tint=p.gt/100;r=Math.min(1,r+fac*.5*(p.lb/50)*(0.5+tint));g=Math.min(1,g+fac*.04);b=Math.max(0,b-fac*.06*(0.5+tint))}}
+    d[i]=Math.round(clamp(r)*255);d[i+1]=Math.round(clamp(g)*255);d[i+2]=Math.round(clamp(b)*255);
+  }
+  ctx.putImageData(id,0,0);
+  if(p.grainOn&&p.gr>0){ctx.save();const gc=document.createElement('canvas');gc.width=W;gc.height=H;const gx=gc.getContext('2d'),gi=gx.createImageData(W,H),gd=gi.data,amt=p.gr/100*55;for(let i=0;i<gd.length;i+=4){const n=(Math.random()-.5)*amt;gd[i]=gd[i+1]=gd[i+2]=128+n;gd[i+3]=255}gx.putImageData(gi,0,0);ctx.globalCompositeOperation='overlay';ctx.globalAlpha=p.gr/280;ctx.drawImage(gc,0,0);ctx.restore()}
+  if(p.vigOn&&p.va>0){const cx=W/2,cy=H/2,rad=Math.sqrt(cx*cx+cy*cy),fth=.3+p.vf/150,grad=ctx.createRadialGradient(cx,cy,rad*(1-fth),cx,cy,rad);grad.addColorStop(0,'rgba(0,0,0,0)');grad.addColorStop(1,`rgba(0,0,0,${p.va/115})`);ctx.fillStyle=grad;ctx.fillRect(0,0,W,H)}
+}
+
+$('hal-export').onclick=()=>{
+  const SIZE=33,p=HP,lines=[],pn=$('hal-info-preset').textContent||'Custom';
+  lines.push('# HALEA Halation Lab — '+pn,'# by @robbiesatriaa · instagram.com/robbiesatriaa','LUT_3D_SIZE '+SIZE,'DOMAIN_MIN 0.0 0.0 0.0','DOMAIN_MAX 1.0 1.0 1.0','');
+  for(let bi=0;bi<SIZE;bi++)for(let gi=0;gi<SIZE;gi++)for(let ri=0;ri<SIZE;ri++){
+    let r=ri/(SIZE-1),g=gi/(SIZE-1),b=bi/(SIZE-1);
+    if(p.fadeOn){const bl=p.bk/600,wc=p.wc/600;r=bl+r*(1-bl-wc);g=bl+g*(1-bl-wc);b=bl+b*(1-bl-wc)}
+    if(p.toneOn){r*=Math.pow(2,p.exp/100*2);g*=Math.pow(2,p.exp/100*2);b*=Math.pow(2,p.exp/100*2);if(p.con!==0){const c=p.con/200;r=.5+(r-.5)*(1+c*2);g=.5+(g-.5)*(1+c*2);b=.5+(b-.5)*(1+c*2)}const hl=p.hl/300,sh=p.sh/300,wv=p.wh/300,bv=p.bl/500;r+=hl*r*(1-r)+sh*(1-r)*(1-r)+wv*r*r+bv;g+=hl*g*(1-g)+sh*(1-g)*(1-g)+wv*g*g+bv;b+=hl*b*(1-b)+sh*(1-b)*(1-b)+wv*b*b+bv}
+    if(p.colorOn){const tv=p.tmp/400,tn=p.tnt/400;r+=tv;b-=tv;g-=tn;r+=tn*.3;b+=tn*.3;const L=.299*r+.587*g+.114*b;if(p.ssh!==0){const f=(1-L)*(p.ssh/600);r-=f;b+=f}if(p.shi!==0){const f=L*(p.shi/600);r+=f;b-=f}const lm=.299*r+.587*g+.114*b,sv=p.sat/200;r=lm+(r-lm)*(1+sv);g=lm+(g-lm)*(1+sv);b=lm+(b-lm)*(1+sv);const lm2=.299*r+.587*g+.114*b,st2=Math.max(r,g,b)-Math.min(r,g,b),vb=(p.vib/300)*(1-st2);r=lm2+(r-lm2)*(1+vb);g=lm2+(g-lm2)*(1+vb);b=lm2+(b-lm2)*(1+vb)}
+    if(p.halationOn){const lh=.299*r+.587*g+.114*b,thr=p.ht/100;if(lh>thr){const fac=Math.pow((lh-thr)/(1-thr),1.4)*(p.hi/100),tint=p.gt/100;r=Math.min(1,r+fac*.5*(p.lb/50)*(0.5+tint));g=Math.min(1,g+fac*.04);b=Math.max(0,b-fac*.06*(0.5+tint))}}
+    lines.push(clamp(r).toFixed(6)+' '+clamp(g).toFixed(6)+' '+clamp(b).toFixed(6));
+  }
+  const a=document.createElement('a');a.href=URL.createObjectURL(new Blob([lines.join('\n')],{type:'text/plain'}));a.download='HALEA_'+pn.replace(/\s+/g,'_')+'.cube';a.click();showToast('✓ LUT downloaded!');
+};
+$('hal-reset').onclick=()=>{Object.assign(HP,HAL_DEFAULTS);syncHal();$('hal-info-preset').textContent='Default';document.querySelectorAll('#hal-presets .pchip').forEach(b=>b.classList.remove('active'));halRedraw()};
+$('hal-random').onclick=()=>{const rnd=(a,b)=>Math.round(a+(b-a)*Math.random());HP.ht=rnd(40,75);HP.hr=rnd(6,28);HP.hi=rnd(20,80);HP.lb=rnd(4,20);HP.exp=rnd(-10,20);HP.con=rnd(0,20);HP.hl=rnd(-10,30);HP.sh=rnd(-5,20);HP.sat=rnd(-25,15);HP.tmp=rnd(-20,30);HP.ssh=rnd(-25,25);HP.shi=rnd(-25,25);HP.gr=rnd(5,25);HP.va=rnd(15,55);HP.bk=rnd(2,16);HP.wc=rnd(0,10);syncHal();document.querySelectorAll('#hal-presets .pchip').forEach(b=>b.classList.remove('active'));$('hal-info-preset').textContent='Random';halRedraw()};
+$('hal-save').onclick=async()=>{
+  if(!currentUser){showToast('Sign in as admin to save','var(--warn)');$('loginModal').classList.add('open');return}
+  const n=prompt('LUT name:');if(!n)return;
+  const SIZE=33,p=HP,lines=['# HALEA — '+n,'LUT_3D_SIZE '+SIZE,'DOMAIN_MIN 0.0 0.0 0.0','DOMAIN_MAX 1.0 1.0 1.0',''];
+  for(let bi=0;bi<SIZE;bi++)for(let gi=0;gi<SIZE;gi++)for(let ri=0;ri<SIZE;ri++){let r=ri/(SIZE-1),g=gi/(SIZE-1),b=bi/(SIZE-1);if(p.fadeOn){const bl=p.bk/600,wc=p.wc/600;r=bl+r*(1-bl-wc);g=bl+g*(1-bl-wc);b=bl+b*(1-bl-wc)}if(p.toneOn){r*=Math.pow(2,p.exp/100*2);g*=Math.pow(2,p.exp/100*2);b*=Math.pow(2,p.exp/100*2);if(p.con!==0){const c=p.con/200;r=.5+(r-.5)*(1+c*2);g=.5+(g-.5)*(1+c*2);b=.5+(b-.5)*(1+c*2)}const hl=p.hl/300,sh=p.sh/300,wv=p.wh/300,bv=p.bl/500;r+=hl*r*(1-r)+sh*(1-r)*(1-r)+wv*r*r+bv;g+=hl*g*(1-g)+sh*(1-g)*(1-g)+wv*g*g+bv;b+=hl*b*(1-b)+sh*(1-b)*(1-b)+wv*b*b+bv}if(p.halationOn){const lh=.299*r+.587*g+.114*b,thr=p.ht/100;if(lh>thr){const fac=Math.pow((lh-thr)/(1-thr),1.4)*(p.hi/100);r=Math.min(1,r+fac*.5*(p.lb/50));g=Math.min(1,g+fac*.04);b=Math.max(0,b-fac*.06)}}lines.push(clamp(r).toFixed(6)+' '+clamp(g).toFixed(6)+' '+clamp(b).toFixed(6))}
+  const product={id:'p_'+Date.now(),name:n,type:'preset',desc:'Halation Lab preset.',price:0,thumb:null,fileData:'data:text/plain;base64,'+btoa(lines.join('\n')),fileExt:'.cube',created:Date.now()};
+  if(useMemory)memStore.products.push(product);else await DB.put('products',product);
+  showToast('✓ Saved to library: '+n);
+};
+document.querySelectorAll('.pmode-btn').forEach(b=>{b.onclick=()=>{halPreviewMode=b.dataset.mode;document.querySelectorAll('.pmode-btn').forEach(x=>x.classList.remove('active'));b.classList.add('active');halRedraw()}});
+(()=>{let drag=false;const bar=$('split-bar');const move=x=>{const sc=$('hal-split'),rect=sc.getBoundingClientRect(),xx=Math.max(10,Math.min(sc.offsetWidth-10,x-rect.left)),pct=(xx/sc.offsetWidth)*100;bar.style.left=pct+'%';$('hal-after').style.clipPath=`inset(0 ${100-pct}% 0 0)`};bar.onmousedown=e=>{drag=true;e.preventDefault()};bar.ontouchstart=e=>{drag=true;e.preventDefault()};document.addEventListener('mousemove',e=>{if(drag)move(e.clientX)});document.addEventListener('touchmove',e=>{if(drag)move(e.touches[0].clientX)});document.addEventListener('mouseup',()=>drag=false);document.addEventListener('touchend',()=>drag=false)})();
+window.addEventListener('resize',()=>{if(halImg)halRedraw()});
+
+// ════════════════════════════════════════════════════════════════════════════
+// AI ASSISTANT
+// ════════════════════════════════════════════════════════════════════════════
+async function sendAI(msg){
+  if(!msg.trim())return;
+  const hist=$('chat-history');
+  const ub=document.createElement('div');ub.className='msg user';ub.textContent=msg;hist.appendChild(ub);
+  const tb=document.createElement('div');tb.className='msg ai';tb.innerHTML='<em style="color:var(--t3)">Thinking...</em>';hist.appendChild(tb);hist.scrollTop=hist.scrollHeight;
+  setStatus('AI thinking...','ai');$('chat-send').disabled=true;
+  // context from current analysis
+  let ctx='';if(refAnalysis){ctx=`\n\n[Context: User sedang analisis reference foto dengan mood ${refAnalysis.warmth>0?'warm':'cool'}, contrast ${Math.round(refAnalysis.contrast*100)}%, saturation ${Math.round(refAnalysis.avgSat*100)}%${refAnalysis.hasSkin?', ada skin tone':''}.]`}
+  try{
+    const res=await fetch('/api/ai',{method:'POST',headers:{'Content-Type':'application/json','anthropic-version':'2023-06-01',},body:JSON.stringify({model:'claude-sonnet-4-20250514',max_tokens:1000,system:`Kamu adalah AI assistant untuk HALEA, web app color grading buatan @robbiesatriaa (creator Indonesia). Kamu second brain yang ahli color grading, LUT, film look, halation, video editing (Premiere/Resolve/AE), DAN strategi bisnis jualan preset/LUT ke market global. Jawab bahasa Indonesia casual, praktis, actionable, ga bertele-tele. Kalau soal teknis kasih angka/setting konkret.`,messages:[{role:'user',content:msg+ctx}]})});
+    const data=await res.json();
+    const text=data.content?.map(c=>c.text||'').join('')||'Maaf ada error.';
+    tb.innerHTML=text.replace(/\n/g,'<br>').replace(/\*\*(.*?)\*\*/g,'<strong>$1</strong>');
+  }catch(e){tb.innerHTML='<span style="color:var(--err)">Error: '+(!getApiKey()?'Set API key dulu (tombol 🔑 di kanan atas)':'Cek koneksi internet')+'</span>'}
+  setStatus('Ready','ok');$('chat-send').disabled=false;hist.scrollTop=hist.scrollHeight;$('chat-input').value='';
+}
+$('chat-send').onclick=()=>sendAI($('chat-input').value);
+$('chat-input').onkeydown=e=>{if(e.key==='Enter'&&!e.shiftKey){e.preventDefault();sendAI($('chat-input').value)}};
+function sendQuick(m){$('chat-input').value=m;sendAI(m)}
+function clearChat(){$('chat-history').innerHTML='<div class="msg system">Chat cleared</div>'}
+
+// ════════════════════════════════════════════════════════════════════════════
+// TOOLS + LESSONS + MODAL  (loaded from app3.js)
+// ════════════════════════════════════════════════════════════════════════════
+function closeModal(){$('modal').classList.remove('open')}
+$('modal').onclick=e=>{if(e.target===$('modal'))closeModal()};
+
+// ════════════════════════════════════════════════════════════════════════════
+// INIT
+// ════════════════════════════════════════════════════════════════════════════
+window.addEventListener('DOMContentLoaded',async()=>{
+  initAdminUploads();
+  initToolsAndLessons();
+  renderNodes();
+  updateCreditUI();
+  updateApiKeyUI();
+  // restore user
+  try{const u=localStorage.getItem('halea_user');if(u){currentUser=JSON.parse(u);applyUser()}}catch(e){}
+  // seed demo products if empty
+  const products=await getProducts();
+  if(products.length===0){
+    const demos=[
+      {id:'demo_1',name:'Jakarta Nights',type:'lut',desc:'Neon-soaked night look with red halation. For urban Indonesia footage.',price:0,thumb:null,created:Date.now(),fileData:makeDemoLUT('cinestill'),fileExt:'.cube'},
+      {id:'demo_2',name:'Golden Tropics',type:'lut',desc:'Warm golden-hour grade tuned for tropical daylight & skin tones.',price:12,thumb:null,created:Date.now()+1,fileData:makeDemoLUT('golden'),fileExt:'.cube'},
+      {id:'demo_3',name:'Kopi & Film Pack',type:'pack',desc:'Warm vintage looks inspired by Indonesian coffee culture.',price:29,thumb:null,created:Date.now()+2,fileData:makeDemoLUT('vintage'),fileExt:'.cube'},
+      {id:'demo_4',name:'Clean Commercial',type:'preset',desc:'Natural punchy look for product & commercial work.',price:0,thumb:null,created:Date.now()+3,fileData:makeDemoLUT('natural'),fileExt:'.cube'},
+    ];
+    for(const d of demos){if(useMemory)memStore.products.push(d);else await DB.put('products',d)}
+  }
+  setStatus('Ready','ok');
+});
+
+
+// ════════════════════════════════════════════════════════════════════════════
+// TOOLS
+// ════════════════════════════════════════════════════════════════════════════
+const TOOL_CONTENT={
+  frameCalc:`<div style="font-size:14px;font-weight:700;margin-bottom:14px">⏱ Frame Rate Calculator</div>
+    <div style="display:grid;grid-template-columns:1fr 1fr;gap:12px;margin-bottom:14px">
+      <div><span class="lbl">FPS</span><select id="tc-fps"><option>23.976</option><option>24</option><option>25</option><option selected>30</option><option>50</option><option>60</option><option>120</option></select></div>
+      <div><span class="lbl">Duration (sec)</span><input type="number" id="tc-dur" value="60"></div>
+    </div>
+    <button class="btn btn-accent" onclick="calcFrames()" style="margin-bottom:12px">Calculate</button>
+    <div id="tc-result" style="display:none;background:var(--s3);border:1px solid var(--b1);border-radius:var(--r);padding:14px;font-family:var(--mono);font-size:11px;line-height:2.2"></div>`,
+  colorTemp:`<div style="font-size:14px;font-weight:700;margin-bottom:14px">🌡 Color Temperature Reference</div>
+    <div style="display:grid;grid-template-columns:1fr 1fr;gap:6px">
+    ${[['1800K','Candle / Fire','#ff6000'],['2700K','Warm Bulb','#ff8c40'],['3200K','Tungsten / Studio','#ffaa60'],['4000K','Cool White LED','#ffd090'],['5000K','Neutral Daylight','#fff5e0'],['5600K','Sunny Midday','#fffef5'],['6500K','Overcast / Shade','#f0f8ff'],['7500K','Cloudy','#d8ecff'],['9000K','Blue Hour Sky','#a8ccff']].map(([k,l,c])=>`<div style="display:flex;align-items:center;gap:10px;padding:8px 10px;background:var(--s3);border-radius:var(--r);border:1px solid var(--b1)"><div style="width:26px;height:26px;border-radius:5px;background:${c};flex-shrink:0;border:1px solid rgba(255,255,255,.1)"></div><div><div style="font-size:12px;font-weight:700;font-family:var(--mono);color:var(--accent)">${k}</div><div style="font-size:9px;color:var(--t2)">${l}</div></div></div>`).join('')}</div>`,
+  logExposure:`<div style="font-size:14px;font-weight:700;margin-bottom:8px">📊 Log Exposure Guide</div>
+    <p style="font-size:10px;color:var(--t2);margin-bottom:14px;line-height:1.7">Cara expose tiap log format supaya detail shadow & highlight maksimal.</p>
+    ${[['S-Log2','Sony','Expose +1 to +2 stops over. Middle grey ≈ 32%.'],['S-Log3','Sony','Expose +1.5 to +2 stops. Middle grey ≈ 41%. Lebih shadow detail.'],['F-Log','Fujifilm','Expose +1 stop. Middle grey ≈ 47%. Hati-hati highlight.'],['F-Log2','Fujifilm','Expose +1.5 stops. 14+ stops DR. Buat high contrast.'],['D-Log M','DJI','Expose +0.5 to +1. Middle grey ≈ 42%. Osmo Pocket 3.'],['Apple Log','iPhone','Expose +0.5. Auto metering biasanya akurat. ≈ 36%.'],['V-Log','Panasonic','Expose 0 to +1. Middle grey ≈ 42%. Wide latitude.']].map(([n,c,t])=>`<div style="background:var(--s3);border:1px solid var(--b1);border-radius:var(--r);padding:10px 12px;margin-bottom:7px"><div style="display:flex;justify-content:space-between;margin-bottom:3px"><strong style="font-size:12px">${n}</strong><span style="font-size:9px;color:var(--t3)">${c}</span></div><div style="font-size:10px;color:var(--t2);line-height:1.6">${t}</div></div>`).join('')}`,
+  bitrateCalc:`<div style="font-size:14px;font-weight:700;margin-bottom:14px">💾 Storage Calculator</div>
+    <div style="display:flex;flex-direction:column;gap:10px;margin-bottom:14px">
+      <div><span class="lbl">Codec / Bitrate</span><select id="bc-codec"><option value="25">H.264 4K 25Mbps</option><option value="50">H.264 4K 50Mbps</option><option value="100">H.265 4K 100Mbps</option><option value="200">ProRes Proxy</option><option value="400">ProRes 422 HQ</option><option value="800">BRAW / RAW</option></select></div>
+      <div><span class="lbl">Duration (minutes)</span><input type="number" id="bc-dur" value="60"></div>
+    </div>
+    <button class="btn btn-accent" onclick="calcStorage()" style="margin-bottom:12px">Calculate</button>
+    <div id="bc-result" style="display:none;background:var(--s3);border:1px solid var(--b1);border-radius:var(--r);padding:14px;font-family:var(--mono);font-size:11px;line-height:2.2"></div>`,
+  aspectRatio:`<div style="font-size:14px;font-weight:700;margin-bottom:14px">📐 Aspect Ratio Guide</div>
+    ${[['16:9','1920×1080 / 3840×2160','Standard YouTube, broadcast, web'],['2.39:1','Anamorphic widescreen','Cinematic films, letterbox'],['2.35:1','CinemaScope','Classic cinema crop'],['9:16','1080×1920','TikTok, Reels, Shorts'],['1:1','1080×1080','Instagram feed square'],['4:5','1080×1350','Instagram portrait (best engagement)'],['4:3','Classic / vintage','Retro look, old TV feel']].map(([r,res,use])=>`<div style="background:var(--s3);border:1px solid var(--b1);border-radius:var(--r);padding:10px 12px;margin-bottom:7px"><div style="display:flex;justify-content:space-between;align-items:center"><strong style="font-size:13px;font-family:var(--mono);color:var(--accent)">${r}</strong><span style="font-size:9px;color:var(--t3)">${res}</span></div><div style="font-size:10px;color:var(--t2);margin-top:3px">${use}</div></div>`).join('')}`,
+  shortcutRef:`<div style="font-size:14px;font-weight:700;margin-bottom:14px">⌨️ Premiere Pro Shortcuts</div>
+    <div style="display:flex;flex-direction:column;gap:4px">${[['NAVIGATION',''],['J / K / L','Rewind / Pause / Forward'],['Space','Play / Pause'],['Shift+← →','5 frames jump'],['EDITING',''],['C','Razor tool'],['V','Selection'],['B','Ripple Edit'],['Ctrl+K','Cut at playhead'],['Q / W','Ripple trim in/out'],['COLOR',''],['Shift+5','Lumetri panel'],['~','Maximize panel'],['EXPORT',''],['Ctrl+M','Export Media'],['Ctrl+Shift+E','Export Frame']].map(([k,v])=>v?`<div style="display:flex;justify-content:space-between;padding:5px 10px;background:var(--s3);border-radius:4px"><span style="font-family:var(--mono);font-size:10px;color:var(--accent)">${k}</span><span style="font-size:10px;color:var(--t2)">${v}</span></div>`:`<div style="font-size:8px;font-weight:700;letter-spacing:.1em;color:var(--t3);padding:8px 2px 3px">${k}</div>`).join('')}</div>`,
+  shotMatch:`<div style="font-size:14px;font-weight:700;margin-bottom:8px">🎨 Shot Matching Tips</div>
+    ${[['Match Exposure First','Cek waveform scope. Samain exposure semua klip sebelum grading.'],['Neutralize White Balance','Set WB konsisten dulu pakai grey card / referensi sebelum creative.'],['Skin Tone is King','Skin tone jadi anchor utama. Konsistenin dulu warna kulit.'],['Use Color Wheels','Lift/Gamma/Gain lebih powerful dari slider untuk match.'],['Pick a Hero Frame','Pilih 1 klip master, match semua ke situ. Biasanya close-up.']].map(([t,d])=>`<div style="background:var(--s3);border:1px solid var(--b1);border-radius:var(--r);padding:10px 12px;margin-bottom:7px"><div style="font-size:11px;font-weight:700;color:var(--accent);margin-bottom:3px">${t}</div><div style="font-size:10px;color:var(--t2);line-height:1.6">${d}</div></div>`).join('')}`,
+  exportPreset:`<div style="font-size:14px;font-weight:700;margin-bottom:14px">🚀 Export Settings per Platform</div>
+    ${[['YouTube 4K','H.264/H.265 · 3840×2160 · 35-45 Mbps · Rec.709'],['YouTube 1080p','H.264 · 1920×1080 · 15-20 Mbps'],['Instagram Reels','H.264 · 1080×1920 · 8-12 Mbps · max 90s'],['TikTok','H.264 · 1080×1920 · 8-10 Mbps'],['Master / Archive','ProRes 422 HQ · match source res · Rec.709'],['Client Review','H.264 · 1080p · 10 Mbps · small file']].map(([p,s])=>`<div style="background:var(--s3);border:1px solid var(--b1);border-radius:var(--r);padding:10px 12px;margin-bottom:7px"><strong style="font-size:12px">${p}</strong><div style="font-size:10px;color:var(--t2);font-family:var(--mono);margin-top:3px">${s}</div></div>`).join('')}`,
+};
+function openTool(id){const p=$('tool-panel');p.innerHTML=TOOL_CONTENT[id]||'';p.style.display='block';p.scrollIntoView({behavior:'smooth',block:'nearest'})}
+function calcFrames(){const fps=parseFloat($('tc-fps').value),dur=parseFloat($('tc-dur').value);if(!dur)return;const fr=Math.round(fps*dur),s=Math.floor(fr/fps),tc=[Math.floor(s/3600),Math.floor(s/60)%60,s%60,Math.round(fr%fps)].map(v=>String(v).padStart(2,'0')).join(':');$('tc-result').innerHTML=`FPS: ${fps}<br>Duration: ${dur}s<br>Total Frames: <strong style="color:var(--accent)">${fr.toLocaleString()}</strong><br>Timecode: ${tc}`;$('tc-result').style.display='block'}
+function calcStorage(){const mbps=parseInt($('bc-codec').value),dur=parseFloat($('bc-dur').value);if(!dur)return;const gb=mbps*1e6/8*dur*60/1e9;$('bc-result').innerHTML=`Bitrate: ${mbps} Mbps<br>Duration: ${dur} min<br>File Size: <strong style="color:var(--accent)">${gb.toFixed(1)} GB</strong><br>256GB card: ~${Math.floor(256/gb)} clips<br>1TB SSD: ~${Math.floor(1000/gb)} clips`;$('bc-result').style.display='block'}
+
+// ════════════════════════════════════════════════════════════════════════════
+// LESSONS
+// ════════════════════════════════════════════════════════════════════════════
+const LESSONS=[
+  {id:'lut',title:'Apa itu LUT?',sub:'Konsep dasar color grading',tag:'DASAR',color:'var(--ok)',content:`<h3>LUT = Look Up Table</h3><p>File berisi "tabel warna" — tiap warna input dipetakan ke output. Mirip filter Instagram tapi jauh lebih presisi dan profesional.</p><h3>Tipe LUT</h3><ul><li><strong>Technical</strong> — konversi log ke Rec.709. Wajib kalau shoot log.</li><li><strong>Creative</strong> — gaya visual (cinematic, warm, dll).</li></ul><div class="tip">💡 LUT dari HALEA menggabungkan technical + creative dalam satu file.</div><h3>Format</h3><ul><li><code>.cube</code> — universal</li><li><code>.3dl</code> — Flame, Lustre</li><li><code>.lut</code> — AE, FCPX</li></ul>`},
+  {id:'log',title:'Apa itu Log / Flat?',sub:'Kenapa footage terlihat pucat',tag:'DASAR',color:'var(--ok)',content:`<h3>Log = Profile yang Simpan Detail Maksimal</h3><p>Kamera sengaja ga proses warna biar detail shadow & highlight kesimpen. Hasilnya flat/pucat — itu tugas editor untuk grade.</p><h3>Kenapa Shoot Log?</h3><ul><li>Dynamic range lebih lebar</li><li>Lebih banyak data untuk dimanipulasi</li><li>Hasil lebih cinematic</li></ul><div class="tip">💡 Kalau ga shoot log, pilih Rec.709/SDR di LUT Studio. LUT tetap bisa dipake untuk creative.</div><h3>Pipeline Benar</h3><p>Log → Technical LUT → Color Grade → Export</p>`},
+  {id:'halation',title:'Apa itu Halation?',sub:'Efek khas film analog',tag:'FILM LOOK',color:'var(--accent)',content:`<h3>Halation — Cahaya yang "Bocor"</h3><p>Di film analog, cahaya terang nembus emulsi dan mantul balik, bikin glow kemerahan di sekitar highlight. Itu halation.</p><h3>Kenapa Keren?</h3><ul><li>Depth & atmosfer lebih dalam</li><li>Cahaya terasa hangat & organik</li><li>Tampilan khas film 35mm</li></ul><div class="tip">💡 Di Halation Lab, "Light Bleed" mensimulasikan red channel bleed — fringe merah khas CineStill.</div><h3>Parameter</h3><ul><li><strong>Threshold</strong> — highlight pemicu halation</li><li><strong>Radius</strong> — besar bloom</li><li><strong>Intensity</strong> — kekuatan blend</li><li><strong>Light Bleed</strong> — fringe merah</li></ul>`},
+  {id:'apply',title:'Apply LUT di Premiere 2025',sub:'Step by step lengkap',tag:'TUTORIAL',color:'var(--a3)',content:`<h3>Via Lumetri Color</h3><ul><li>Klik klip di timeline</li><li>Buka panel <strong>Lumetri Color</strong></li><li>Scroll ke <strong>Creative</strong></li><li>Dropdown <strong>Look</strong> → <strong>Browse...</strong></li><li>Pilih file <code>.cube</code></li><li>Adjust <strong>Intensity</strong> (80-100%)</li></ul><h3>Apply ke Banyak Klip</h3><ul><li>Apply ke 1 klip dulu</li><li>Klik kanan → Copy</li><li>Select klip lain → Paste Attributes → centang Lumetri</li></ul><div class="tip">💡 Pakai Adjustment Layer di track atas — apply LUT sekali, kena semua klip di bawahnya.</div>`},
+  {id:'basics',title:'Dasar Color Grading',sub:'Urutan workflow yang benar',tag:'DASAR',color:'var(--ok)',content:`<h3>Urutan yang Benar</h3><ul><li><strong>1. Exposure</strong> — fix kecerahan</li><li><strong>2. White Balance</strong> — netralin warna</li><li><strong>3. Contrast</strong> — atur depth</li><li><strong>4. Highlights/Shadows</strong> — detailing</li><li><strong>5. Color</strong> — creative terakhir</li></ul><h3>Highlights vs Whites</h3><ul><li><strong>Highlights</strong> — area terang (recovery)</li><li><strong>Whites</strong> — titik putih global</li></ul><div class="tip">💡 Untuk faded film look: naikin Blacks +5 sampai +15. Ini bikin kesan analog.</div>`},
+  {id:'sell',title:'Cara Jual Preset & LUT',sub:'Monetisasi untuk creator',tag:'BISNIS',color:'var(--a2)',content:`<h3>Strategi Pricing</h3><ul><li><strong>Single LUT:</strong> $5-15</li><li><strong>Pack (5-10 LUT):</strong> $25-50</li><li><strong>Bundle besar:</strong> $50-99</li></ul><h3>Platform Jualan</h3><ul><li>Gumroad — paling gampang, payout global</li><li>Sellfy, Payhip — alternatif</li><li>Website sendiri + Stripe</li></ul><h3>Marketing</h3><ul><li>Before/after reel di Instagram & TikTok</li><li>Free LUT sebagai lead magnet</li><li>Kolaborasi dengan creator lain</li></ul><div class="tip">💡 Free tier penting! Kasih 1-2 LUT gratis untuk narik orang, baru upsell ke pack berbayar. Itu kenapa HALEA Shop punya free + paid.</div><h3>Target Market Dollar</h3><p>Creator US/EU bayar lebih tinggi. Bikin preview pakai footage universal biar relate ke global audience.</p>`},
+
+  {id:'nodes',title:'Cara Pakai Grade Nodes',sub:'Sistem node di LUT Studio',tag:'HALEA',color:'var(--accent)',content:`<h3>Apa itu Grade Nodes?</h3><p>LUT Studio HALEA pakai sistem node bertumpuk — mirip node tree di DaVinci Resolve, tapi semua di-bake jadi satu file .cube universal yang jalan di Premiere juga.</p><h3>Urutan Node yang Disaranin</h3><ul><li><strong>1. Log Input</strong> — decode log dulu (kalau shoot log)</li><li><strong>2. Primary</strong> — koreksi dasar: lift/gamma/gain, temp, contrast</li><li><strong>3. Curves</strong> — kurva tone presisi</li><li><strong>4. HSL Secondary</strong> — target warna spesifik</li><li><strong>5. Look</strong> — gaya kreatif</li><li><strong>6. Halation</strong> — finishing film glow</li></ul><div class="tip">💡 Node diproses dari atas ke bawah. Reorder pakai tombol ▲▼. Toggle on/off tiap node tanpa hapus.</div><h3>Auto-Match</h3><p>Klik "Auto-Match from Reference" — HALEA otomatis bikin node stack berdasarkan analisis foto referensi. Dari situ tinggal tweak.</p>`},
+  {id:'primary-node',title:'Primary Correction',sub:'Lift, Gamma, Gain',tag:'TEKNIK',color:'var(--a3)',content:`<h3>Lift / Gamma / Gain</h3><p>Ini fondasi semua color grading profesional.</p><ul><li><strong>Lift</strong> — angkat/turunin shadow (area gelap)</li><li><strong>Gamma</strong> — atur midtone tanpa ganggu hitam/putih</li><li><strong>Gain</strong> — kontrol highlight (area terang)</li></ul><h3>Workflow</h3><p>Mulai dari Gain (set white point), lalu Lift (set black point), terakhir Gamma (atur mid). Cek waveform scope sambil adjust.</p><h3>Per-Channel</h3><p>Geser Gain Red/Green/Blue terpisah untuk netralin color cast. Footage kekuningan? Turunin gain merah/hijau sedikit, naikin biru.</p><div class="tip">💡 Di HALEA, slider Temp & Tint di node Primary lebih cepet buat white balance ketimbang per-channel manual.</div>`},
+  {id:'curves-node',title:'Menguasai Curves',sub:'Tone curve & per-channel',tag:'TEKNIK',color:'var(--a3)',content:`<h3>Kenapa Curves Powerful?</h3><p>Curves kasih kontrol presisi di titik tonal manapun. Satu kurva bisa gantiin banyak slider.</p><h3>S-Curve = Contrast</h3><p>Turunin shadow + naikin highlight = bentuk S. Ini cara klasik nambah contrast yang natural.</p><h3>Faded Film Look</h3><p>Angkat titik paling kiri-bawah kurva (black point) ke atas. Hitam jadi abu-abu = kesan analog/matte.</p><h3>Per-Channel Curves</h3><ul><li><strong>Red up di highlight</strong> = highlight hangat</li><li><strong>Blue up di shadow</strong> = shadow dingin (teal)</li><li>Kombinasi = teal & orange look</li></ul><div class="tip">💡 Di curve editor HALEA: klik buat tambah titik, drag buat geser, double-click buat hapus.</div>`},
+  {id:'hsl-node',title:'HSL Secondary',sub:'Target warna spesifik',tag:'TEKNIK',color:'var(--a3)',content:`<h3>Apa itu Secondary?</h3><p>Primary kena seluruh gambar. Secondary cuma kena range warna tertentu — misal cuma kulit, cuma langit.</p><h3>Contoh Pakai</h3><ul><li><strong>Skin</strong> (hue ~0.05) — naikin saturation dikit biar kulit hidup</li><li><strong>Sky</strong> (hue ~0.6) — geser hue ke cyan biar langit lebih dramatic</li><li><strong>Foliage</strong> (hue ~0.28) — kontrol hijau daun</li></ul><h3>Range & Falloff</h3><p>Range kecil = target sempit/presisi. Range besar = blend lebih halus ke warna sekitar.</p><div class="tip">💡 Pakai preset hue di HALEA (Skin/Sky/Foliage) sebagai starting point, lalu sesuaikan.</div>`},
+  {id:'teal-orange',title:'Teal & Orange Recipe',sub:'Look blockbuster Hollywood',tag:'RECIPE',color:'var(--a2)',content:`<h3>Kenapa Teal & Orange?</h3><p>Kulit manusia condong ke oranye. Dengan push shadow ke teal/biru, kulit jadi "pop" karena kontras komplementer. Ini look film action/blockbuster.</p><h3>Recipe di HALEA</h3><ul><li><strong>Primary:</strong> Temp sedikit hangat, contrast +0.15</li><li><strong>Curves Blue:</strong> angkat shadow biru, turunin highlight biru</li><li><strong>Curves Red:</strong> angkat highlight merah dikit</li><li><strong>HSL Skin:</strong> jaga saturation kulit</li><li><strong>Look:</strong> Teal Orange amount 60%</li></ul><div class="tip">💡 Jangan overdo. Teal & orange yang halus lebih kelas dari yang lebay. Amount 50-70% biasanya pas.</div>`},
+  {id:'white-balance',title:'White Balance & Temp',sub:'Netralin warna dengan benar',tag:'DASAR',color:'var(--ok)',content:`<h3>Apa itu White Balance?</h3><p>Bikin warna putih bener-bener putih, ga kekuningan atau kebiruan. Fondasi sebelum creative grading.</p><h3>Temperature vs Tint</h3><ul><li><strong>Temperature</strong> — biru ↔ kuning (warm/cool)</li><li><strong>Tint</strong> — hijau ↔ magenta</li></ul><h3>Cara Cepat</h3><p>Cari area yang harusnya netral (putih/abu). Pakai eyedropper white balance, atau geser Temp/Tint sampai netral.</p><div class="tip">💡 Lampu tungsten = oranye (turunin temp). Shade/mendung = biru (naikin temp). Tahu sumber cahaya bantu tebak koreksi.</div><h3>Creative WB</h3><p>Setelah netral, lo bisa sengaja bikin warm (golden hour vibe) atau cool (mood dingin/malam).</p>`},
+  {id:'skin-tones',title:'Skin Tone yang Natural',sub:'Warna kulit yang believable',tag:'TEKNIK',color:'var(--a3)',content:`<h3>Skin Tone = Prioritas #1</h3><p>Penonton paling sensitif sama warna kulit. Salah dikit langsung kelihatan "aneh".</p><h3>Skin Tone Line</h3><p>Di vectorscope, kulit sehat jatuh di garis "skin tone line" (sekitar 11 o'clock). Semua ras ada di garis sama, beda cuma di saturasi/brightness.</p><h3>Tips</h3><ul><li>Hindari kulit terlalu oranye atau magenta</li><li>Pakai HSL Secondary untuk isolasi & koreksi kulit</li><li>Jangan over-saturate — kulit natural agak muted</li></ul><div class="tip">💡 Footage Indonesia/Asia: hati-hati push terlalu warm, kulit gampang jadi oranye lebay. Sedikit aja.</div>`},
+  {id:'film-emulation',title:'Emulasi Film Stock',sub:'Kodak, Fuji, CineStill',tag:'FILM LOOK',color:'var(--accent)',content:`<h3>Karakter Tiap Film Stock</h3><ul><li><strong>Kodak Vision3</strong> — warm, highlight roll-off lembut, skin tone bagus</li><li><strong>Fuji 400H</strong> — pastel, hijau-cyan halus, airy</li><li><strong>CineStill 800T</strong> — tungsten balance, halation merah agresif, night vibe</li><li><strong>Kodak Portra</strong> — skin tone juara, low contrast</li></ul><h3>Elemen Film Look</h3><ul><li>Halation (glow merah di highlight)</li><li>Grain (tekstur)</li><li>Lifted blacks (hitam ga pure)</li><li>Highlight roll-off lembut</li><li>Slight color shift per tonal range</li></ul><div class="tip">💡 Halation Lab HALEA punya preset semua film stock ini. Pakai sebagai dasar, lalu export jadi LUT.</div>`},
+  {id:'scopes',title:'Baca Scopes & Waveform',sub:'Ukur warna secara objektif',tag:'TEKNIK',color:'var(--a3)',content:`<h3>Kenapa Pakai Scopes?</h3><p>Mata gampang ketipu (monitor, lighting ruangan). Scopes kasih data objektif.</p><h3>Waveform</h3><p>Nunjukin brightness/luma. Sumbu Y = 0 (hitam) sampai 100 (putih). Pastiin ga ada yang clipping di 0 atau 100 kecuali sengaja.</p><h3>Vectorscope</h3><p>Nunjukin saturasi & hue. Titik tengah = no saturation. Makin jauh = makin saturated. Garis diagonal = skin tone line.</p><h3>Parade (RGB)</h3><p>Tiga waveform terpisah R/G/B. Bagus buat cek & fix color cast — kalau biru lebih tinggi di shadow, ada cast biru.</p><div class="tip">💡 Histogram di HALEA (tab Scopes) nunjukin distribusi RGB referensi & footage lo.</div>`},
+  {id:'export-master',title:'Master vs Delivery Export',sub:'Workflow export profesional',tag:'EXPORT',color:'var(--a4)',content:`<h3>Dua Tahap Export</h3><p>Jangan langsung export ke MP4 final dari timeline. Pro workflow:</p><ul><li><strong>1. Master file</strong> — ProRes 422 HQ, kualitas penuh, buat archive</li><li><strong>2. Delivery</strong> — compress master ke H.264 per platform</li></ul><h3>Kenapa?</h3><ul><li>Master bisa di-re-export berkali-kali tanpa render ulang timeline</li><li>Compress dari master lebih cepat & konsisten</li><li>Kalau platform ganti requirement, tinggal re-compress</li></ul><h3>Settings Cepat</h3><ul><li><strong>YouTube 4K:</strong> H.264/265, 35-45 Mbps</li><li><strong>Reels/TikTok:</strong> 1080×1920, 8-12 Mbps</li><li><strong>Master:</strong> ProRes 422 HQ</li></ul><div class="tip">💡 Tool "Export Settings" di tab Tools punya cheat sheet lengkap per platform.</div>`},
+];
+function initToolsAndLessons(){
+  const list=$('lesson-list');
+  LESSONS.forEach((les,i)=>{const d=document.createElement('div');d.className='lesson';d.id='lesson-'+les.id;d.innerHTML=`<div class="l-num">${i+1}</div><div class="l-info"><div class="l-title">${les.title}</div><div class="l-sub">${les.sub}</div></div><span class="l-tag" style="background:${les.color}22;color:${les.color};border:1px solid ${les.color}44">${les.tag}</span>`;d.onclick=()=>openLesson(les);list.appendChild(d)});
+}
+function openLesson(les){$('modal-title').textContent=les.title;$('modal-body').innerHTML=les.content;$('modal-foot').innerHTML=`<button class="btn btn-sm btn-ghost" onclick="closeModal()">Close</button>${doneLessons.has(les.id)?'':`<button class="btn btn-sm btn-accent" onclick="markDone('${les.id}')">✓ Mark Done</button>`}`;$('modal').classList.add('open')}
+function markDone(id){doneLessons.add(id);const el=$('lesson-'+id);if(el){el.classList.add('done');el.querySelector('.l-num').textContent='✓'}closeModal();showToast('✓ Lesson done!')}
+
+
+
+</script>
+</body>
+</html>
