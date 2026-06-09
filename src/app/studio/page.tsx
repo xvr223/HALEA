@@ -157,7 +157,7 @@ export default function StudioPage() {
       const c=document.createElement('canvas')
       c.width=width; c.height=height
       c.getContext('2d')!.putImageData(new ImageData(out,width,height), 0, 0)
-      setAfterSrc(c.toDataURL('image/jpeg', 0.92))
+      setAfterSrc(c.toDataURL('image/jpeg', 0.97))
     })
   }, [nodes, footImg])
 
@@ -193,12 +193,15 @@ export default function StudioPage() {
   const handleFootage = (f: File) => {
     const img=new Image(), url=URL.createObjectURL(f)
     img.onload = () => {
+      // Keep original blob URL for BEFORE display (crisp, no downscale)
+      setFootSrc(url)
+      // Processing canvas — 900px for good quality afterSrc without being too slow
       const c=document.createElement('canvas')
-      const scale=Math.min(1, 480/img.width)
+      const scale=Math.min(1, 900/Math.max(img.width, img.height))
       c.width=Math.round(img.width*scale); c.height=Math.round(img.height*scale)
       c.getContext('2d')!.drawImage(img, 0, 0, c.width, c.height)
       setFootImg(c.getContext('2d')!.getImageData(0, 0, c.width, c.height))
-      setFootSrc(c.toDataURL()); URL.revokeObjectURL(url)
+      // Note: do NOT revoke url here — it's used by footSrc for display
     }; img.src=url
   }
 

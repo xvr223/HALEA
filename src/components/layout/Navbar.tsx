@@ -12,6 +12,7 @@ const NAV = [
   { href: '/shop',   label: 'Shop' },
   { href: '/ai',     label: 'AI' },
   { href: '/learn',  label: 'Learn' },
+  { href: '/about',  label: 'About' },
 ]
 
 export function Navbar() {
