@@ -23,16 +23,17 @@ const QUICK = [
   'Tips color grading footage F-Log2 dari Fujifilm?',
 ]
 
-interface Msg { role: 'user' | 'model' | 'system'; text: string }
+interface Msg { role: 'user' | 'assistant' | 'system'; text: string }
+interface HistoryMsg { role: 'user' | 'assistant'; content: string }
 
 export default function AIPage() {
   const [msgs, setMsgs] = useState<Msg[]>([
-    { role: 'system', text: '🤖 HALEA AI — powered by Gemini 2.0 Flash' },
-    { role: 'model', text: 'Halo! Gw HALEA AI, second brain lo untuk color grading. Tanya soal LUT, film look, cara pakai HALEA, atau strategi jualan preset. 🎬' },
+    { role: 'system', text: '🤖 HALEA AI — powered by Groq (Free)' },
+    { role: 'assistant', text: 'Halo! Gw HALEA AI, second brain lo untuk color grading. Tanya soal LUT, film look, cara pakai HALEA, atau strategi jualan preset. 🎬' },
   ])
   const [input, setInput] = useState('')
   const [loading, setLoading] = useState(false)
-  const [history, setHistory] = useState<{ role: string; parts: { text: string }[] }[]>([])
+  const [history, setHistory] = useState<HistoryMsg[]>([])
   const endRef = useRef<HTMLDivElement>(null)
 
   useEffect(() => { endRef.current?.scrollIntoView({ behavior: 'smooth' }) }, [msgs])
@@ -41,36 +42,29 @@ export default function AIPage() {
     if (!msg.trim() || loading) return
     setInput('')
     setLoading(true)
-    const userMsg: Msg = { role: 'user', text: msg }
-    const thinkMsg: Msg = { role: 'model', text: '...' }
-    setMsgs(m => [...m, userMsg, thinkMsg])
+    setMsgs(m => [...m, { role: 'user', text: msg }, { role: 'assistant', text: '...' }])
 
-    const newHistory = [...history, { role: 'user', parts: [{ text: msg }] }]
+    const newHistory: HistoryMsg[] = [...history, { role: 'user', content: msg }]
 
     try {
       const res = await fetch('/api/chat', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({
-          system_instruction: { parts: [{ text: SYSTEM }] },
-          contents: newHistory,
-          generationConfig: { maxOutputTokens: 1024, temperature: 0.7 },
-        }),
+        body: JSON.stringify({ system: SYSTEM, messages: newHistory }),
       })
       const data = await res.json()
       if (data.error) throw new Error(data.error)
-      const text = data.candidates?.[0]?.content?.parts?.[0]?.text
-      if (!text) throw new Error('Response kosong dari Gemini')
-      setMsgs(m => [...m.slice(0, -1), { role: 'model', text }])
-      setHistory([...newHistory, { role: 'model', parts: [{ text }] }].slice(-20))
+      const text = data.choices?.[0]?.message?.content
+      if (!text) throw new Error('Response kosong')
+      setMsgs(m => [...m.slice(0, -1), { role: 'assistant', text }])
+      setHistory(([...newHistory, { role: 'assistant' as const, content: text }]).slice(-20))
     } catch (e: unknown) {
       const msg = e instanceof Error ? e.message : 'Unknown error'
-      const isKeyError = msg.toLowerCase().includes('api_key') || msg.toLowerCase().includes('belum di-set')
       setMsgs(m => [...m.slice(0, -1), {
-        role: 'model',
-        text: isKeyError
-          ? '⚠️ **GEMINI_API_KEY belum di-set.**\n\nTambahkan di file `.env.local`:\n```\nGEMINI_API_KEY=AIza...\n```\nDapatkan key gratis di [aistudio.google.com](https://aistudio.google.com)'
-          : `❌ Error: ${msg}`
+        role: 'assistant',
+        text: msg.includes('GROQ_API_KEY') || msg.includes('belum di-set')
+          ? '⚠️ **GROQ_API_KEY belum di-set.**\n\nDaftar gratis di `console.groq.com` → buat API key → tambah ke Vercel env vars:\n`GROQ_API_KEY=gsk_...`'
+          : `❌ ${msg}`
       }])
     }
     setLoading(false)
