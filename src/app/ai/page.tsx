@@ -58,12 +58,20 @@ export default function AIPage() {
         }),
       })
       const data = await res.json()
-      const text = data.candidates?.[0]?.content?.parts?.[0]?.text || 'Maaf, coba lagi.'
+      if (data.error) throw new Error(data.error)
+      const text = data.candidates?.[0]?.content?.parts?.[0]?.text
+      if (!text) throw new Error('Response kosong dari Gemini')
       setMsgs(m => [...m.slice(0, -1), { role: 'model', text }])
-      const updatedHistory = [...newHistory, { role: 'model', parts: [{ text }] }]
-      setHistory(updatedHistory.slice(-20))
-    } catch {
-      setMsgs(m => [...m.slice(0, -1), { role: 'model', text: 'Error: API tidak tersedia.' }])
+      setHistory([...newHistory, { role: 'model', parts: [{ text }] }].slice(-20))
+    } catch (e: unknown) {
+      const msg = e instanceof Error ? e.message : 'Unknown error'
+      const isKeyError = msg.toLowerCase().includes('api_key') || msg.toLowerCase().includes('belum di-set')
+      setMsgs(m => [...m.slice(0, -1), {
+        role: 'model',
+        text: isKeyError
+          ? '⚠️ **GEMINI_API_KEY belum di-set.**\n\nTambahkan di file `.env.local`:\n```\nGEMINI_API_KEY=AIza...\n```\nDapatkan key gratis di [aistudio.google.com](https://aistudio.google.com)'
+          : `❌ Error: ${msg}`
+      }])
     }
     setLoading(false)
   }
