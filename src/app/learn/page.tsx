@@ -50,7 +50,7 @@ export default function LearnPage() {
 
       {/* Tools */}
       <section id="tools" className="mb-16">
-        <h2 className="font-bold text-xl mb-5">🛠 Quick Tools</h2>
+        <h2 className="font-bold text-xl mb-5">🛠 Alat Cepat</h2>
         <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-4 gap-3">
           {TOOLS.map(t => (
             <button key={t.id} onClick={() => setActiveTool(activeTool === t.id ? null : t.id)}
@@ -70,7 +70,7 @@ export default function LearnPage() {
 
       {/* Lessons */}
       <section id="learn">
-        <h2 className="font-bold text-xl mb-5">📚 Beginner Guide</h2>
+        <h2 className="font-bold text-xl mb-5">📚 Panduan Pemula</h2>
         <div className="flex flex-col gap-3">
           {LESSONS.map(l => (
             <button key={l.id} onClick={() => setActiveLesson(l)}
@@ -106,11 +106,11 @@ export default function LearnPage() {
                 .replace(/<strong>/g, '<strong class="text-txt">')
               }} />
             <div className="flex gap-2 p-5 border-t border-b1">
-              <button onClick={() => setActiveLesson(null)} className="px-4 py-2 bg-s4 border border-b2 rounded-xl text-xs font-bold text-t2 hover:text-txt transition-colors">Close</button>
+              <button onClick={() => setActiveLesson(null)} className="px-4 py-2 bg-s4 border border-b2 rounded-xl text-xs font-bold text-t2 hover:text-txt transition-colors">Tutup</button>
               {!done.has(activeLesson.id) && (
                 <button onClick={() => { setDone(d => new Set([...d, activeLesson.id])); setActiveLesson(null) }}
                   className="px-4 py-2 bg-accent text-white rounded-xl text-xs font-bold hover:bg-orange-400 transition-colors">
-                  ✓ Mark Done
+                  ✓ Tandai Selesai
                 </button>
               )}
             </div>

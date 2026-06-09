@@ -6,32 +6,32 @@ import { Badge, Btn, Card, toast } from '@/components/ui'
 import Link from 'next/link'
 
 const TYPE_LABELS: Record<string, string> = { lut: 'LUT', preset: 'Preset', pack: 'Pack', credits: 'AI Credits' }
-const FILTERS = ['All', 'LUT', 'Preset', 'Pack', 'AI Credits', 'Free']
+const FILTERS = ['Semua', 'LUT', 'Preset', 'Pack', 'AI Credits', 'Gratis']
 
 export default function ShopPage() {
   const { products, seedDemo } = useShopStore()
   const { user, credits, redeemCode } = useAuthStore()
-  const [filter, setFilter] = useState('All')
+  const [filter, setFilter] = useState('Semua')
   const [selected, setSelected] = useState<Product | null>(null)
 
   useEffect(() => { seedDemo() }, [seedDemo])
 
   const filtered = products.filter(p => {
-    if (filter === 'All') return true
-    if (filter === 'Free') return p.price === 0
+    if (filter === 'Semua') return true
+    if (filter === 'Gratis') return p.price === 0
     if (filter === 'AI Credits') return p.type === 'credits'
     return p.type === filter.toLowerCase()
   })
 
   const handleRedeem = () => {
-    const code = prompt('Enter AI Credits code:')
+    const code = prompt('Masukkan kode AI Credits:')
     if (!code) return
-    if (redeemCode(code)) toast('✓ Credits added!')
-    else toast('Invalid code', 'err')
+    if (redeemCode(code)) toast('✓ Credits ditambahkan!')
+    else toast('Kode tidak valid', 'err')
   }
 
   const handleDownload = (p: Product) => {
-    if (!p.fileData) { toast('No file attached', 'err'); return }
+    if (!p.fileData) { toast('File tidak tersedia', 'err'); return }
     const a = document.createElement('a')
     a.href = p.fileData; a.download = p.name.replace(/\s+/g, '_') + (p.fileExt || '.cube'); a.click()
     toast('✓ Downloaded: ' + p.name)
@@ -48,7 +48,7 @@ export default function ShopPage() {
           Premium <span className="italic text-accent">LUTs</span> &amp; Presets
         </h1>
         <p className="text-t2 max-w-md mx-auto text-sm leading-relaxed">
-          Cinematic looks crafted by @robbiesatriaa. Free & paid. Works with Premiere, Resolve, AE, FCPX.
+          Look sinematik karya @robbiesatriaa. Gratis & berbayar. Kompatibel dengan Premiere, Resolve, AE, FCPX.
         </p>
 
         {/* Credit badge */}
@@ -56,11 +56,11 @@ export default function ShopPage() {
           {user?.role !== 'admin' && (
             <button onClick={handleRedeem}
               className="flex items-center gap-2 px-4 py-2 rounded-full bg-ok/10 border border-ok/20 text-ok text-xs font-bold hover:bg-ok/15 transition-colors">
-              🤖 {credits} AI Credits · Redeem Code
+              🤖 {credits} AI Credits · Redeem Kode
             </button>
           )}
           {!user && (
-            <Link href="/login" className="text-t3 text-xs hover:text-accent transition-colors">Sign in as admin →</Link>
+            <Link href="/login" className="text-t3 text-xs hover:text-accent transition-colors">Masuk sebagai admin →</Link>
           )}
         </div>
       </div>
@@ -79,7 +79,7 @@ export default function ShopPage() {
       {filtered.length === 0 ? (
         <div className="text-center py-24 text-t3">
           <div className="text-5xl mb-4 opacity-20">🛍</div>
-          <p className="text-sm">No products yet.{user ? ' Go to Admin to add some.' : ''}</p>
+          <p className="text-sm">Belum ada produk.{user ? ' Buka Admin untuk menambahkan.' : ''}</p>
         </div>
       ) : (
         <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-4">
@@ -105,7 +105,7 @@ export default function ShopPage() {
                   <span className={`font-mono text-sm font-bold ${p.price === 0 ? 'text-ok' : 'text-a2'}`}>
                     {p.price === 0 ? 'Free' : '$' + p.price}
                   </span>
-                  <span className="text-[10px] text-t3 font-bold">{p.price === 0 ? 'Download →' : 'Get →'}</span>
+                  <span className="text-[10px] text-t3 font-bold">{p.price === 0 ? 'Unduh →' : 'Dapatkan →'}</span>
                 </div>
               </div>
             </button>
@@ -130,30 +130,30 @@ export default function ShopPage() {
               {selected.type === 'credits' ? (
                 <div className="space-y-3">
                   <div className="bg-s3 rounded-xl p-4 text-sm text-t2 leading-relaxed">
-                    💡 Buy AI Credits via DM → receive a code → redeem above for instant activation.
-                    <br/>Current balance: <span className="text-ok font-bold">{credits} credits</span>
+                    💡 Beli AI Credits via DM → terima kode → redeem untuk aktivasi langsung.
+                    <br/>Saldo kamu: <span className="text-ok font-bold">{credits} credits</span>
                   </div>
                   <div className="flex gap-2">
                     <button onClick={handleRedeem} className="flex-1 px-4 py-2.5 bg-s4 border border-b2 text-xs font-bold rounded-xl hover:border-b3 transition-colors">
-                      🎫 Redeem Code
+                      🎫 Redeem Kode
                     </button>
                     <a href="https://instagram.com/robbiesatriaa" target="_blank"
                       className="flex-1 px-4 py-2.5 bg-a4 text-black text-xs font-bold rounded-xl text-center hover:bg-purple-300 transition-colors">
-                      Buy via DM
+                      Beli via DM
                     </a>
                   </div>
                 </div>
               ) : selected.price === 0 ? (
                 <Btn variant="accent" size="lg" className="w-full" onClick={() => handleDownload(selected)}>
-                  ⬇ Download Free
+                  ⬇ Unduh Gratis
                 </Btn>
               ) : (
                 <a href="https://instagram.com/robbiesatriaa" target="_blank"
                   className="block text-center px-6 py-3 bg-accent text-white text-sm font-bold rounded-xl hover:bg-orange-400 transition-colors">
-                  Contact to Buy — @robbiesatriaa
+                  Hubungi untuk Beli — @robbiesatriaa
                 </a>
               )}
-              <button onClick={() => setSelected(null)} className="w-full mt-3 text-t3 text-xs hover:text-txt transition-colors">Close</button>
+              <button onClick={() => setSelected(null)} className="w-full mt-3 text-t3 text-xs hover:text-txt transition-colors">Tutup</button>
             </div>
           </div>
         </div>

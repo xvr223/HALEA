@@ -4,12 +4,12 @@ import { Navbar } from '@/components/layout/Navbar'
 import { Toaster } from '@/components/ui'
 
 export const metadata: Metadata = {
-  title: 'HALEA — Cinematic Color, Engineered',
-  description: 'Professional color grading tools. AI-powered LUT generator, Halation Studio, and preset shop by @robbiesatriaa.',
-  keywords: ['LUT', 'color grading', 'halation', 'film look', 'premiere pro', 'davinci resolve'],
+  title: 'HALEA — Warna Sinematik, Dirancang dengan Presisi',
+  description: 'Tools color grading profesional untuk video editor Indonesia. Generator LUT berbasis AI, Halation Studio, dan toko preset premium oleh @robbiesatriaa.',
+  keywords: ['LUT', 'color grading', 'halation', 'film look', 'premiere pro', 'davinci resolve', 'preset', 'video editing indonesia'],
   openGraph: {
-    title: 'HALEA — Cinematic Color, Engineered',
-    description: 'AI-powered LUT generator & cinematic color tools',
+    title: 'HALEA — Warna Sinematik, Dirancang dengan Presisi',
+    description: 'Generator LUT berbasis AI & tools color grading sinematik untuk kreator Indonesia',
     url: 'https://halea.vercel.app',
     siteName: 'HALEA',
     type: 'website',

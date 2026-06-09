@@ -1,12 +1,12 @@
 import Link from 'next/link'
 
 const FEATURES = [
-  { icon: '🎞', title: 'LUT Studio', desc: 'Node-based grading pipeline baked to .cube — Primary, Curves, HSL, Halation.', href: '/studio', badge: 'PRO', bc: 'text-accent' },
-  { icon: '✦',  title: 'AI Match', desc: 'Claude Vision reads your reference photo and builds a precise grade automatically.', href: '/studio', badge: 'AI', bc: 'text-a4' },
-  { icon: '🤖', title: 'AI Assistant', desc: 'Gemini-powered color grading expert. Tanya soal LUT, film look, strategi jualan preset.', href: '/ai', badge: 'FREE', bc: 'text-ok' },
-  { icon: '🛍', title: 'Shop', desc: 'Premium LUTs & presets crafted by @robbiesatriaa. Free & paid. Instant download.', href: '/shop', badge: 'SHOP', bc: 'text-a2' },
-  { icon: '🛠', title: 'Editor Tools', desc: 'Frame calc, color temp chart, log exposure guide, storage calc, Premiere shortcuts.', href: '/learn', badge: 'TOOLS', bc: 'text-warn' },
-  { icon: '📚', title: 'Learn', desc: '15+ modul belajar color grading dari basics sampai bisnis jualan preset ke global market.', href: '/learn', badge: 'FREE', bc: 'text-ok' },
+  { icon: '🎞', title: 'LUT Studio', desc: 'Pipeline grading berbasis node yang menghasilkan file .cube — Primary, Curves, HSL, Halation.', href: '/studio', badge: 'PRO', bc: 'text-accent' },
+  { icon: '✦',  title: 'AI Match', desc: 'Analisis warna otomatis dari foto referensi. Upload foto, dapatkan grade-nya secara instan.', href: '/studio', badge: 'AI', bc: 'text-a4' },
+  { icon: '🤖', title: 'HALEA AI', desc: 'Asisten color grading berbasis AI. Tanya soal LUT, film look, strategi jualan preset — semua dijawab.', href: '/ai', badge: 'FREE', bc: 'text-ok' },
+  { icon: '🛍', title: 'Shop', desc: 'LUT & preset premium karya @robbiesatriaa. Gratis & berbayar. Download langsung, pakai selamanya.', href: '/shop', badge: 'SHOP', bc: 'text-a2' },
+  { icon: '🛠', title: 'Editor Tools', desc: 'Frame calc, color temp chart, panduan log exposure, storage calc, shortcut Premiere Pro.', href: '/learn', badge: 'TOOLS', bc: 'text-warn' },
+  { icon: '📚', title: 'Belajar', desc: '15+ modul belajar color grading dari dasar sampai bisnis jualan preset ke pasar global.', href: '/learn', badge: 'FREE', bc: 'text-ok' },
 ]
 
 const COMPAT = ['Premiere Pro', 'DaVinci Resolve', 'After Effects', 'Final Cut Pro', 'Lightroom', 'CapCut Pro']
@@ -34,20 +34,20 @@ export default function Home() {
             HAL<span className="italic text-accent">E</span>A
           </h1>
           <p className="text-t2 text-lg sm:text-xl font-mono tracking-widest uppercase mb-3">
-            Cinematic Color, Engineered
+            Warna Sinematik, Dirancang dengan Presisi
           </p>
           <p className="text-t2 max-w-lg mx-auto text-sm leading-relaxed mb-10">
-            Professional color grading tools for video editors. AI-powered LUT generator, Halation Studio, and premium preset shop.
+            Tools color grading profesional untuk video editor Indonesia. Generator LUT berbasis AI, Halation Studio, dan toko preset premium — semua dalam satu platform.
           </p>
 
           <div className="flex flex-wrap gap-3 justify-center mb-12">
             <Link href="/studio"
               className="px-8 py-3.5 bg-accent text-white text-sm font-bold tracking-wide rounded-xl hover:bg-orange-400 hover:-translate-y-0.5 transition-all shadow-lg shadow-accent/25">
-              Open Studio
+              Buka Studio
             </Link>
             <Link href="/shop"
               className="px-8 py-3.5 bg-s3 border border-b1 text-txt text-sm font-bold tracking-wide rounded-xl hover:border-b3 hover:-translate-y-0.5 transition-all">
-              Browse Shop
+              Lihat Shop
             </Link>
           </div>
 
@@ -67,10 +67,10 @@ export default function Home() {
       {/* Features */}
       <section className="max-w-7xl mx-auto px-4 sm:px-6 py-24 w-full">
         <div className="text-center mb-14">
-          <p className="text-[10px] font-bold tracking-[.2em] uppercase text-accent mb-3">What&apos;s inside</p>
+          <p className="text-[10px] font-bold tracking-[.2em] uppercase text-accent mb-3">Apa yang ada di HALEA</p>
           <h2 className="font-fraunces text-4xl sm:text-5xl font-semibold">
-            Everything you need to<br />
-            <span className="italic text-accent">grade like a pro</span>
+            Semua yang kamu butuhkan untuk<br />
+            <span className="italic text-accent">grade seperti profesional</span>
           </h2>
         </div>
 
@@ -93,12 +93,12 @@ export default function Home() {
       <section className="border-t border-b1 bg-s1">
         <div className="max-w-7xl mx-auto px-4 sm:px-6 py-16 flex flex-col sm:flex-row items-center justify-between gap-6">
           <div>
-            <h3 className="font-fraunces text-2xl font-semibold mb-1">Start grading cinematic.</h3>
-            <p className="text-t2 text-sm">Free tools, AI-powered, works with every NLE.</p>
+            <h3 className="font-fraunces text-2xl font-semibold mb-1">Mulai grading sinematik sekarang.</h3>
+            <p className="text-t2 text-sm">Tools gratis, berbasis AI, kompatibel dengan semua NLE.</p>
           </div>
           <div className="flex gap-3">
             <Link href="/studio" className="px-6 py-3 bg-accent text-white text-sm font-bold rounded-xl hover:bg-orange-400 transition-colors">
-              Open Studio →
+              Buka Studio →
             </Link>
             <a href="https://instagram.com/robbiesatriaa" target="_blank"
               className="px-6 py-3 bg-s3 border border-b1 text-t2 text-sm font-bold rounded-xl hover:border-b3 transition-colors">
@@ -113,7 +113,7 @@ export default function Home() {
         <div className="max-w-7xl mx-auto px-4 sm:px-6 flex flex-col sm:flex-row items-center justify-between gap-4 text-t3 text-xs font-mono">
           <span>© 2025 HALEA — by <a href="https://instagram.com/robbiesatriaa" target="_blank" className="hover:text-accent transition-colors">@robbiesatriaa</a></span>
           <div className="flex gap-4">
-            {[['/', 'Home'], ['/studio', 'Studio'], ['/shop', 'Shop'], ['/ai', 'AI'], ['/learn', 'Learn']].map(([href, label]) => (
+            {[['/', 'Beranda'], ['/studio', 'Studio'], ['/shop', 'Shop'], ['/ai', 'AI'], ['/learn', 'Belajar']].map(([href, label]) => (
               <Link key={href} href={href} className="hover:text-txt transition-colors">{label}</Link>
             ))}
           </div>

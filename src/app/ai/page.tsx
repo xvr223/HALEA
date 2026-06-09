@@ -27,7 +27,7 @@ interface HistoryMsg { role: 'user' | 'assistant'; content: string }
 
 export default function AIPage() {
   const [msgs, setMsgs] = useState<Msg[]>([
-    { role: 'system', text: '✦ HALEA AI — Groq · Free' },
+    { role: 'system', text: '✦ HALEA AI — Color Grading Expert' },
     { role: 'assistant', text: 'Halo! Gw HALEA AI, second brain lo untuk color grading. Tanya soal LUT, film look, cara pakai HALEA, atau strategi jualan preset. 🎬' },
   ])
   const [input, setInput] = useState('')
@@ -60,8 +60,8 @@ export default function AIPage() {
       const errMsg = e instanceof Error ? e.message : 'Unknown error'
       setMsgs(m => [...m.slice(0, -1), {
         role: 'assistant',
-        text: errMsg.includes('GROQ_API_KEY') || errMsg.includes('belum di-set')
-          ? '⚠️ **GROQ_API_KEY belum di-set.**\n\nDaftar gratis di `console.groq.com` → buat API key → tambah ke Vercel env vars:\n`GROQ_API_KEY=gsk_...`'
+        text: errMsg.includes('GROQ_API_KEY') || errMsg.includes('belum di-set') || errMsg.includes('API key')
+          ? '⚠️ **Layanan AI sedang tidak tersedia.**\n\nCoba lagi dalam beberapa saat.'
           : `❌ ${errMsg}`
       }])
     }
@@ -80,7 +80,7 @@ export default function AIPage() {
             </div>
             <div>
               <h1 className="font-fraunces text-lg font-semibold leading-none">HALEA <span className="italic text-a4">AI</span></h1>
-              <p className="text-t3 text-[10px] font-mono mt-0.5">Groq · Free · llama-3.1</p>
+              <p className="text-t3 text-[10px] font-mono mt-0.5">Powered by HALEA</p>
             </div>
           </div>
           <button

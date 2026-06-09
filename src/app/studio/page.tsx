@@ -253,7 +253,7 @@ export default function StudioPage() {
         onPointerDown={e=>e.currentTarget.setPointerCapture(e.pointerId)}
         onPointerMove={e=>{
           if(e.buttons!==1&&e.pressure===0)return
-          const r=splitRef.current!.getBoundingClientRect()
+          const r=e.currentTarget.parentElement!.getBoundingClientRect()
           setSplitPos(Math.max(2,Math.min(98,(e.clientX-r.left)/r.width*100)))
         }}>
         <div className="absolute top-0 bottom-0 left-1/2 -translate-x-1/2 w-0.5 bg-white/90 shadow-[0_0_12px_rgba(255,255,255,0.5)]"/>

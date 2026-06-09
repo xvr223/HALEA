@@ -7,12 +7,12 @@ import { useAuthStore } from '@/store/auth'
 import clsx from 'clsx'
 
 const NAV = [
-  { href: '/',       label: 'Home' },
+  { href: '/',       label: 'Beranda' },
   { href: '/studio', label: 'Studio' },
   { href: '/shop',   label: 'Shop' },
   { href: '/ai',     label: 'AI' },
-  { href: '/learn',  label: 'Learn' },
-  { href: '/about',  label: 'About' },
+  { href: '/learn',  label: 'Belajar' },
+  { href: '/about',  label: 'Tentang' },
 ]
 
 export function Navbar() {
