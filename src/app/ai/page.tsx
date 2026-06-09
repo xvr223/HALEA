@@ -76,7 +76,7 @@ export default function AIPage() {
       <div className="flex items-center justify-between mb-4">
         <div>
           <h1 className="font-fraunces text-2xl font-semibold">HALEA <span className="italic text-a4">AI</span></h1>
-          <p className="text-t3 text-xs font-mono">Powered by Gemini 2.0 Flash · Free</p>
+          <p className="text-t3 text-xs font-mono">Powered by Groq · Free</p>
         </div>
         <button onClick={() => { setMsgs(m => m.slice(0, 2)); setHistory([]) }}
           className="p-2 rounded-lg text-t3 hover:text-err hover:bg-err/10 transition-colors">
