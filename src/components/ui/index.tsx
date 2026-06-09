@@ -150,7 +150,7 @@ export function Toaster() {
     }
   }, [])
   return (
-    <div className="fixed bottom-6 left-1/2 -translate-x-1/2 flex flex-col gap-2 z-[999] pointer-events-none">
+    <div className="fixed bottom-20 md:bottom-6 left-1/2 -translate-x-1/2 flex flex-col gap-2 z-[999] pointer-events-none">
       {items.map(({ id, msg, type }) => (
         <div key={id} className={clsx('px-5 py-2.5 rounded-full text-xs font-bold shadow-xl animate-slide-up',
           type === 'ok'  ? 'bg-ok text-black' :
