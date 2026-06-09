@@ -1,7 +1,7 @@
 import type { Metadata } from 'next'
 import './globals.css'
 import { Navbar } from '@/components/layout/Navbar'
-import { Toaster } from '@/components/ui/Toaster'
+import { Toaster } from '@/components/ui'
 
 export const metadata: Metadata = {
   title: 'HALEA — Cinematic Color, Engineered',
