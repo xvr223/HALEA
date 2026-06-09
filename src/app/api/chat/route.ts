@@ -4,13 +4,14 @@ export async function POST(req: NextRequest) {
   const key = process.env.GEMINI_API_KEY
   if (!key) {
     return NextResponse.json(
-      { error: 'GEMINI_API_KEY belum di-set. Tambah di .env.local atau Vercel env vars.' },
+      { error: 'GEMINI_API_KEY belum di-set di environment variables.' },
       { status: 500 }
     )
   }
 
   try {
-    const { model = 'gemini-2.0-flash', ...body } = await req.json()
+    // gemini-1.5-flash masih gratis, 2.0-flash sudah habis free tier
+    const { model = 'gemini-1.5-flash', ...body } = await req.json()
     const res = await fetch(
       `https://generativelanguage.googleapis.com/v1beta/models/${model}:generateContent?key=${key}`,
       { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(body) }
@@ -22,7 +23,6 @@ export async function POST(req: NextRequest) {
     }
     return NextResponse.json(data)
   } catch (e: unknown) {
-    const msg = e instanceof Error ? e.message : 'Unknown error'
-    return NextResponse.json({ error: msg }, { status: 500 })
+    return NextResponse.json({ error: e instanceof Error ? e.message : 'Unknown error' }, { status: 500 })
   }
 }
