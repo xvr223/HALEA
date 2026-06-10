@@ -119,6 +119,7 @@ function bakeLUT(nodes:GradeNode[],size:number):Float32Array{
 }
 
 const mkId=()=>'n'+Date.now()+Math.random().toString(36).slice(2,5)
+const mkUUID=()=>'xxxxxxxx-xxxx-4xxx-yxxx-xxxxxxxxxxxx'.replace(/[xy]/g,c=>{const r=Math.random()*16|0;return(c==='x'?r:(r&0x3|0x8)).toString(16)})
 const makeCubeContent = (lut:Float32Array, size:number) => {
   let c=`# HALEA — by @robbiesatriaa\nLUT_3D_SIZE ${size}\nDOMAIN_MIN 0.0 0.0 0.0\nDOMAIN_MAX 1.0 1.0 1.0\n\n`
   for(let i=0;i<lut.length;i+=3) c+=`${lut[i].toFixed(6)} ${lut[i+1].toFixed(6)} ${lut[i+2].toFixed(6)}\n`
@@ -256,41 +257,55 @@ export default function StudioPage() {
     if (!nodes.length) { toast('Match Colors dulu', 'warn'); return }
     const primary = nodes.find(n=>n.type==='primary')
     if (!primary) return
-    const p = primary.params
-    const temp  = Math.round(6500 + (p.temp as number)*3500)
-    const tint  = Math.round(-(p.tint as number)*80)
-    const expo  = ((p.gamma as number)*1.5).toFixed(2)
-    const con   = Math.round((p.con as number)*80)
-    const sat   = Math.round((p.sat as number)*80)
-    const blacks= Math.round((p.lift as number)*60)
+    const p       = primary.params
+    const temp    = Math.round(6500 + (p.temp as number)*3500)   // Kelvin 3000–10000
+    const tint    = Math.round(-(p.tint as number)*150)           // LR tint –150…+150
+    const expo    = ((p.gamma as number)*1.5).toFixed(2)           // Exposure –5…+5
+    const con     = Math.round((p.con as number)*100)              // Contrast –100…+100
+    const shadows = Math.round((p.lift as number)*60)              // Shadows (lift = open shadows)
+    const blacks  = Math.round((p.lift as number)*400)             // Blacks (lift = raise black floor)
+    const sat     = Math.round((p.sat as number)*100)              // Saturation –100…+100
+    const name    = lutName||'HALEA_Preset'
     const xmp = `<?xpacket begin="" id="W5M0MpCehiHzreSzNTczkc9d"?>
 <x:xmpmeta xmlns:x="adobe:ns:meta/">
- <rdf:RDF xmlns:rdf="http://www.w3.org/1999/02/22-rdf-syntax-ns#">
-  <rdf:Description rdf:about=""
-    xmlns:crs="http://ns.adobe.com/camera-raw-settings/1.0/"
-    crs:ProcessVersion="11.0"
-    crs:WhiteBalance="Custom"
-    crs:Temperature="${temp}"
-    crs:Tint="${tint}"
-    crs:Exposure2012="${expo}"
-    crs:Contrast2012="${con}"
-    crs:Highlights2012="0"
-    crs:Shadows2012="${blacks}"
-    crs:Whites2012="0"
-    crs:Blacks2012="${blacks}"
-    crs:Clarity2012="0"
-    crs:Vibrance="0"
-    crs:Saturation="${sat}"
-    crs:PresetType="Normal"
-    crs:UUID="${mkId()}"
-  />
- </rdf:RDF>
+  <rdf:RDF xmlns:rdf="http://www.w3.org/1999/02/22-rdf-syntax-ns#">
+    <rdf:Description rdf:about=""
+      xmlns:crs="http://ns.adobe.com/camera-raw-settings/1.0/"
+      crs:PresetType="Normal"
+      crs:Cluster=""
+      crs:UUID="${mkUUID()}"
+      crs:SupportsAmount="False"
+      crs:SupportsColor="True"
+      crs:SupportsMonochrome="False"
+      crs:SupportsHighDynamicRange="True"
+      crs:SupportsNormalDynamicRange="True"
+      crs:SupportsSceneReferred="True"
+      crs:SupportsOutputReferred="False"
+      crs:CameraModelRestriction=""
+      crs:Copyright=""
+      crs:ContactInfo=""
+      crs:ProcessVersion="11.0"
+      crs:WhiteBalance="Custom"
+      crs:Temperature="${temp}"
+      crs:Tint="${tint}"
+      crs:Exposure2012="${expo}"
+      crs:Contrast2012="${con}"
+      crs:Highlights2012="0"
+      crs:Shadows2012="${shadows}"
+      crs:Whites2012="0"
+      crs:Blacks2012="${blacks}"
+      crs:Clarity2012="0"
+      crs:Vibrance="0"
+      crs:Saturation="${sat}"
+    />
+  </rdf:RDF>
 </x:xmpmeta>
 <?xpacket end="w"?>`
     const a=document.createElement('a')
-    a.href=URL.createObjectURL(new Blob([xmp],{type:'text/xml'}))
-    a.download=(lutName||'HALEA_Preset')+'.xmp'; a.click()
-    toast('✓ Lightroom preset .xmp downloaded!')
+    // octet-stream forces download on iOS instead of opening as text viewer
+    a.href=URL.createObjectURL(new Blob([xmp],{type:'application/octet-stream'}))
+    a.download=name+'.xmp'; a.click()
+    toast('✓ Preset .xmp siap — import di Lightroom Mobile')
   }
 
   // Share Card — convert footSrc blob→dataURL, store in sessionStorage, open /share
