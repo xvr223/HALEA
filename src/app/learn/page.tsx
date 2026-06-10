@@ -1,5 +1,5 @@
 'use client'
-import { useState } from 'react'
+import { useState, useEffect } from 'react'
 
 const TOOLS = [
   { id: 'grainGen',  icon: '🎞', title: 'Film Grain Generator', badge: 'NEW', color: 'text-accent' },
@@ -23,16 +23,17 @@ const LESSONS = [
   { id: 7, title: 'Cara Jual Preset & LUT', sub: 'Monetisasi creator', tag: 'BISNIS', color: 'text-a2 border-a2/30 bg-a2/10', body: `<h3>Pricing Strategy</h3><ul><li>Single LUT: $5-15</li><li>Pack (5-10 LUT): $25-50</li><li>Bundle besar: $50-99</li></ul><h3>Platform</h3><ul><li>Gumroad — paling gampang</li><li>Website sendiri + Stripe</li></ul><div class="tip">💡 Free tier penting! 1-2 LUT gratis untuk narik orang, upsell ke pack berbayar.</div>` },
 ]
 
-const TOOL_CONTENT: Record<string, React.ReactNode> = {
-  grainGen:  <GrainGen />,
-  frameCalc: <FrameCalc />,
-  colorTemp: <ColorTempChart />,
-  logGuide: <LogGuide />,
-  storage: <StorageCalc />,
-  shortcuts: <ShortcutsSheet />,
-  aspect: <AspectGuide />,
-  shotMatch: <ShotMatchTips />,
-  export: <ExportGuide />,
+// Lazy factories so each click mounts a fresh component instance
+const TOOL_CONTENT: Record<string, () => JSX.Element> = {
+  grainGen:  () => <GrainGen />,
+  frameCalc: () => <FrameCalc />,
+  colorTemp: () => <ColorTempChart />,
+  logGuide:  () => <LogGuide />,
+  storage:   () => <StorageCalc />,
+  shortcuts: () => <ShortcutsSheet />,
+  aspect:    () => <AspectGuide />,
+  shotMatch: () => <ShotMatchTips />,
+  export:    () => <ExportGuide />,
 }
 
 export default function LearnPage() {
@@ -65,7 +66,7 @@ export default function LearnPage() {
         </div>
         {activeTool && TOOL_CONTENT[activeTool] && (
           <div className="mt-4 bg-s2 border border-b1 rounded-2xl p-6 animate-fade-in">
-            {TOOL_CONTENT[activeTool]}
+            {TOOL_CONTENT[activeTool]()}
           </div>
         )}
       </section>
@@ -214,41 +215,69 @@ function ExportGuide() {
 
 function GrainGen() {
   const [intensity, setIntensity] = useState(35)
-  const [res, setRes] = useState('1920x1080')
-  const [type, setType] = useState<'mono'|'warm'|'cool'|'film'>('warm')
-  const [generating, setGenerating] = useState(false)
+  const [res,       setRes]       = useState('1920x1080')
+  const [type,      setType]      = useState<'mono'|'warm'|'cool'|'film'>('warm')
+  const [generating,setGenerating]= useState(false)
+  const [previewUrl,setPreviewUrl]= useState<string|null>(null)
+
+  // Generate a small 320×180 preview on param change
+  const updatePreview = (t: typeof type, intens: number) => {
+    const c = document.createElement('canvas')
+    c.width = 320; c.height = 180
+    const ctx = c.getContext('2d')!
+    const img = ctx.createImageData(320, 180)
+    const d = img.data
+    for (let i = 0; i < d.length; i += 4) {
+      const n  = (Math.random() * 2 - 1) * intens
+      const n2 = (Math.random() * 2 - 1) * intens * 0.3
+      let r = 128 + n + n2
+      let g = 128 + n + n2 * 0.8
+      let b = 128 + n + n2 * 0.6
+      if (t === 'warm') { r += 10; b -= 12 }
+      else if (t === 'cool') { r -= 8; b += 14 }
+      else if (t === 'film') { r += 6; g += 1; b -= 8 }
+      d[i]=Math.max(0,Math.min(255,r)); d[i+1]=Math.max(0,Math.min(255,g))
+      d[i+2]=Math.max(0,Math.min(255,b)); d[i+3]=255
+    }
+    ctx.putImageData(img, 0, 0)
+    setPreviewUrl(c.toDataURL('image/jpeg', 0.92))
+  }
+
+  // Generate preview on first render
+  useEffect(() => { updatePreview('warm', 35) }, [])
 
   const generate = () => {
     setGenerating(true)
     setTimeout(() => {
-      const [w, h] = res.split('x').map(Number)
-      const c = document.createElement('canvas')
-      c.width = w; c.height = h
-      const ctx = c.getContext('2d')!
-      const img = ctx.createImageData(w, h)
-      const d = img.data
-      for (let i = 0; i < d.length; i += 4) {
-        const n = (Math.random() * 2 - 1) * intensity
-        // Layered noise for more organic film feel
-        const n2 = (Math.random() * 2 - 1) * intensity * 0.3
-        let r = 128 + n + n2
-        let g = 128 + n + n2 * 0.8
-        let b = 128 + n + n2 * 0.6
-        if (type === 'warm') { r += 10; b -= 12 }
-        else if (type === 'cool') { r -= 8; b += 14 }
-        else if (type === 'film') { r += 6; g += 1; b -= 8 } // CineStill-like halation tint
-        d[i]   = Math.max(0, Math.min(255, r))
-        d[i+1] = Math.max(0, Math.min(255, g))
-        d[i+2] = Math.max(0, Math.min(255, b))
-        d[i+3] = 255
-      }
-      ctx.putImageData(img, 0, 0)
-      const a = document.createElement('a')
-      a.href = c.toDataURL('image/png')
-      a.download = `HALEA_Grain_${type}_${intensity}.png`
-      a.click()
+      try {
+        const [w, h] = res.split('x').map(Number)
+        const c = document.createElement('canvas')
+        c.width = w; c.height = h
+        const ctx = c.getContext('2d')!
+        const img = ctx.createImageData(w, h)
+        const d = img.data
+        for (let i = 0; i < d.length; i += 4) {
+          const n  = (Math.random() * 2 - 1) * intensity
+          const n2 = (Math.random() * 2 - 1) * intensity * 0.3
+          let r = 128 + n + n2
+          let g = 128 + n + n2 * 0.8
+          let b = 128 + n + n2 * 0.6
+          if (type === 'warm') { r += 10; b -= 12 }
+          else if (type === 'cool') { r -= 8; b += 14 }
+          else if (type === 'film') { r += 6; g += 1; b -= 8 }
+          d[i]=Math.max(0,Math.min(255,r)); d[i+1]=Math.max(0,Math.min(255,g))
+          d[i+2]=Math.max(0,Math.min(255,b)); d[i+3]=255
+        }
+        ctx.putImageData(img, 0, 0)
+        const a = document.createElement('a')
+        a.href = c.toDataURL('image/png')
+        a.download = `HALEA_Grain_${type}_${intensity}.png`
+        document.body.appendChild(a)
+        a.click()
+        document.body.removeChild(a)
+      } catch {}
       setGenerating(false)
-    }, 50)
+    }, 80)
   }
 
   return (
@@ -266,7 +295,7 @@ function GrainGen() {
         </div>
         <div>
           <label className="text-[9px] font-black tracking-widest uppercase text-t3 block mb-1.5">Karakter Grain</label>
-          <select value={type} onChange={e=>setType(e.target.value as typeof type)} className="w-full bg-s3 border border-b1 text-txt px-3 py-2 rounded-lg text-sm outline-none">
+          <select value={type} onChange={e=>{const v=e.target.value as typeof type;setType(v);updatePreview(v,intensity)}} className="w-full bg-s3 border border-b1 text-txt px-3 py-2 rounded-lg text-sm outline-none">
             <option value="mono">Mono (netral)</option>
             <option value="warm">Warm (analog Kodak)</option>
             <option value="cool">Cool (Fuji Superia)</option>
@@ -276,9 +305,18 @@ function GrainGen() {
       </div>
       <div className="mb-4">
         <label className="text-[9px] font-black tracking-widest uppercase text-t3 block mb-2">Intensitas — {intensity}</label>
-        <input type="range" min={10} max={80} value={intensity} onChange={e=>setIntensity(+e.target.value)} className="w-full"/>
+        <input type="range" min={10} max={80} value={intensity}
+          onChange={e=>{const v=+e.target.value;setIntensity(v);updatePreview(type,v)}}
+          className="w-full"/>
         <div className="flex justify-between text-[9px] text-t3 mt-1"><span>Halus</span><span>Kasar</span></div>
       </div>
+      {/* Live preview */}
+      {previewUrl && (
+        <div className="mb-4 rounded-xl overflow-hidden border border-b1 relative">
+          <img src={previewUrl} alt="Grain preview" className="w-full h-28 object-cover"/>
+          <span className="absolute bottom-2 right-2 text-[9px] bg-black/60 text-white/60 px-2 py-0.5 rounded font-mono">preview</span>
+        </div>
+      )}
       <div className="bg-s3 rounded-xl p-3 mb-4 text-xs text-t2 space-y-1 font-mono">
         <p>Resolusi: <span className="text-accent">{res}</span></p>
         <p>Tipe: <span className="text-accent capitalize">{type}</span></p>
@@ -289,7 +327,7 @@ function GrainGen() {
         className="w-full py-3 bg-accent text-white rounded-xl text-sm font-black hover:bg-orange-400 transition-colors disabled:opacity-50 flex items-center justify-center gap-2">
         {generating?<><span className="w-4 h-4 border-2 border-white/30 border-t-white rounded-full animate-spin"/>Generating...</>:'⬇ Generate & Download PNG'}
       </button>
-      <p className="text-[9px] text-t3 text-center mt-2">File besar (sekitar 10-20MB untuk 4K) — tunggu sebentar</p>
+      <p className="text-[9px] text-t3 text-center mt-2">4K membutuhkan beberapa detik — file PNG ~15–30MB</p>
     </div>
   )
 }

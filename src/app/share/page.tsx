@@ -32,9 +32,9 @@ function loadImg(src: string): Promise<HTMLImageElement> {
   })
 }
 
-function fileToDataUrl(f: File): Promise<string> {
+async function fileToDataUrl(f: File): Promise<string> {
+  const url = URL.createObjectURL(f)
   return new Promise((resolve, reject) => {
-    const url = URL.createObjectURL(f)
     const img = new Image()
     img.onload = () => {
       const c = document.createElement('canvas')
@@ -45,26 +45,69 @@ function fileToDataUrl(f: File): Promise<string> {
       URL.revokeObjectURL(url)
       resolve(c.toDataURL('image/jpeg', 0.92))
     }
-    img.onerror = reject
+    img.onerror = () => { URL.revokeObjectURL(url); reject() }
     img.src = url
   })
 }
 
-// ── Main component ────────────────────────────────────────────────────────────
+// ── Upload Zone (defined outside SharePage to prevent remount on re-render) ───
+function UploadZone({
+  which, src, onFile,
+}: {
+  which: 'before' | 'after'
+  src: string | null
+  onFile: (f: File) => void
+}) {
+  const [isDrag, setIsDrag] = useState(false)
+  const lbl    = which === 'before' ? 'BEFORE' : 'AFTER'
+  const lblCls = which === 'after'  ? 'text-accent bg-accent/20' : 'text-white/80 bg-black/60'
+
+  return (
+    <label
+      className={`relative flex flex-col items-center justify-center rounded-2xl border-2 border-dashed cursor-pointer transition-all overflow-hidden ${isDrag ? 'border-accent bg-accent/5 scale-[0.98]' : 'border-b2 bg-s2 hover:border-b3'}`}
+      style={{ aspectRatio: '16/10' }}
+      onDragOver  ={e => { e.preventDefault(); setIsDrag(true) }}
+      onDragLeave ={() => setIsDrag(false)}
+      onDrop      ={e => { e.preventDefault(); setIsDrag(false); const f = e.dataTransfer.files[0]; if (f) onFile(f) }}>
+      <input type="file" accept="image/*" className="sr-only"
+        onChange={e => { const f = e.target.files?.[0]; if (f) onFile(f) }}/>
+      {src ? (
+        <>
+          <img src={src} alt={lbl} className="absolute inset-0 w-full h-full object-cover"/>
+          <div className="absolute inset-0 bg-gradient-to-t from-black/50 via-transparent to-transparent"/>
+          <span className={`absolute bottom-3 left-3 text-[10px] font-black tracking-widest px-2.5 py-1.5 rounded-full backdrop-blur-sm ${lblCls}`}>
+            {lbl}
+          </span>
+          <span className="absolute top-2 right-2 text-[9px] text-white/50 bg-black/50 px-2 py-0.5 rounded-full font-mono">
+            Ganti ↑
+          </span>
+        </>
+      ) : (
+        <div className="flex flex-col items-center gap-3 p-6 text-center select-none">
+          <span className="text-4xl opacity-20 leading-none">{which === 'before' ? '🖼' : '✦'}</span>
+          <div>
+            <p className="text-sm font-bold text-t2">{lbl}</p>
+            <p className="text-[10px] text-t3 mt-0.5">Drop atau klik untuk upload</p>
+          </div>
+        </div>
+      )}
+    </label>
+  )
+}
+
+// ── Main page ─────────────────────────────────────────────────────────────────
 export default function SharePage() {
-  const [beforeSrc, setBeforeSrc] = useState<string | null>(null)
-  const [afterSrc,  setAfterSrc]  = useState<string | null>(null)
-  const [format,    setFormat]    = useState<Fmt>('square')
-  const [handle,    setHandle]    = useState('@robbiesatriaa')
-  const [lookName,  setLookName]  = useState('')
-  const [cardUrl,   setCardUrl]   = useState<string | null>(null)
+  const [beforeSrc,  setBeforeSrc]  = useState<string | null>(null)
+  const [afterSrc,   setAfterSrc]   = useState<string | null>(null)
+  const [format,     setFormat]     = useState<Fmt>('square')
+  const [handle,     setHandle]     = useState('@robbiesatriaa')
+  const [lookName,   setLookName]   = useState('')
+  const [cardUrl,    setCardUrl]    = useState<string | null>(null)
   const [generating, setGenerating] = useState(false)
-  const [cardSize,  setCardSize]  = useState(0)
-  const [dragBefore, setDragBefore] = useState(false)
-  const [dragAfter,  setDragAfter]  = useState(false)
+  const [cardSize,   setCardSize]   = useState(0)
   const canvasRef = useRef<HTMLCanvasElement>(null)
 
-  // Load images from sessionStorage (populated by studio page)
+  // Load from sessionStorage when opened from studio
   useEffect(() => {
     try {
       const b = sessionStorage.getItem('halea_share_before')
@@ -82,21 +125,19 @@ export default function SharePage() {
     setGenerating(true)
     try {
       const [bImg, aImg] = await Promise.all([loadImg(beforeSrc), loadImg(afterSrc)])
-      const fmt = FORMATS[format]
+      const fmt    = FORMATS[format]
       const canvas = canvasRef.current
       canvas.width  = fmt.w
       canvas.height = fmt.h
       const ctx = canvas.getContext('2d')!
 
-      const barH   = Math.round(fmt.h * 0.10)
-      const imgH   = fmt.h - barH
-      const halfW  = Math.round(fmt.w / 2)
+      const barH  = Math.round(fmt.h * 0.10)
+      const imgH  = fmt.h - barH
+      const halfW = Math.round(fmt.w / 2)
 
-      // ── Background ──
       ctx.fillStyle = '#0a0a0a'
       ctx.fillRect(0, 0, fmt.w, fmt.h)
 
-      // ── Draw image cropped into rect ──
       const drawImg = (img: HTMLImageElement, rx: number, ry: number, rw: number, rh: number) => {
         const s  = Math.max(rw / img.width, rh / img.height)
         const sw = img.width  * s
@@ -109,7 +150,7 @@ export default function SharePage() {
       drawImg(bImg, 0,     0, halfW, imgH)
       drawImg(aImg, halfW, 0, halfW, imgH)
 
-      // ── Side vignettes ──
+      // Side vignettes
       ;[0, halfW].forEach(ox => {
         const g = ctx.createLinearGradient(ox, 0, ox + halfW, 0)
         g.addColorStop(0,    'rgba(0,0,0,0.28)')
@@ -120,7 +161,7 @@ export default function SharePage() {
         ctx.fillRect(ox, 0, halfW, imgH)
       })
 
-      // ── Bottom gradient fade ──
+      // Bottom gradient fade
       const fH = barH * 2.2
       const fg = ctx.createLinearGradient(0, imgH - fH, 0, imgH)
       fg.addColorStop(0, 'rgba(0,0,0,0)')
@@ -128,7 +169,7 @@ export default function SharePage() {
       ctx.fillStyle = fg
       ctx.fillRect(0, imgH - fH, fmt.w, fH)
 
-      // ── Divider line ──
+      // Divider line
       ctx.shadowColor = 'rgba(255,255,255,0.55)'
       ctx.shadowBlur  = 18
       ctx.strokeStyle = 'rgba(255,255,255,0.90)'
@@ -136,36 +177,32 @@ export default function SharePage() {
       ctx.beginPath(); ctx.moveTo(halfW, 0); ctx.lineTo(halfW, imgH); ctx.stroke()
       ctx.shadowBlur  = 0
 
-      // ── Handle knob ──
+      // Handle knob
       const hR  = Math.round(fmt.w * 0.030)
       const hCY = Math.round(imgH / 2)
-      // outer glow ring
       ctx.strokeStyle = 'rgba(255,255,255,0.25)'
       ctx.lineWidth   = Math.round(hR * 0.25)
       ctx.beginPath(); ctx.arc(halfW, hCY, hR + hR * 0.35, 0, Math.PI * 2); ctx.stroke()
-      // white circle
       ctx.fillStyle = 'white'
       ctx.beginPath(); ctx.arc(halfW, hCY, hR, 0, Math.PI * 2); ctx.fill()
-      // arrow icon
-      ctx.fillStyle   = '#111'
-      ctx.textAlign   = 'center'
+      ctx.fillStyle    = '#111'
+      ctx.textAlign    = 'center'
       ctx.textBaseline = 'middle'
       ctx.font = `bold ${Math.round(hR * 1.05)}px sans-serif`
       ctx.fillText('⇔', halfW, hCY + 1)
 
-      // ── BEFORE / AFTER labels ──
-      const lPad  = Math.round(fmt.w * 0.020)
-      const lFS   = Math.round(fmt.w * 0.0135)
-      const lH    = lFS + 12
-      const lBR   = lH / 2
-      const lY    = imgH - lPad - lH
+      // BEFORE / AFTER labels
+      const lPad = Math.round(fmt.w * 0.020)
+      const lFS  = Math.round(fmt.w * 0.0135)
+      const lH   = lFS + 12
+      const lY   = imgH - lPad - lH
 
       const drawLbl = (text: string, ax: number, rightAlign?: boolean) => {
         ctx.font = `900 ${lFS}px -apple-system, Arial, sans-serif`
         const tw = ctx.measureText(text).width
         const lx = rightAlign ? ax - tw - lPad * 1.3 : ax
         ctx.fillStyle = 'rgba(0,0,0,0.62)'
-        roundRect(ctx, lx - lPad * 0.65, lY, tw + lPad * 1.3, lH, lBR)
+        roundRect(ctx, lx - lPad * 0.65, lY, tw + lPad * 1.3, lH, lH / 2)
         ctx.fill()
         ctx.fillStyle    = 'rgba(255,255,255,0.92)'
         ctx.textAlign    = 'left'
@@ -175,21 +212,18 @@ export default function SharePage() {
       drawLbl('BEFORE', lPad)
       drawLbl('AFTER',  fmt.w - lPad, true)
 
-      // ── Branding bar ──────────────────────────────────────────────────────
+      // Branding bar
       ctx.fillStyle = '#0d0d0d'
       ctx.fillRect(0, imgH, fmt.w, barH)
-
-      // accent top border
       ctx.fillStyle = '#f97316'
       ctx.fillRect(0, imgH, fmt.w, Math.max(2, Math.round(fmt.h * 0.0022)))
 
       const bCY = imgH + Math.round(barH / 2)
       const lx0 = Math.round(fmt.w * 0.038)
-
-      // Logo circles (HALEA mark)
       const lR  = Math.round(barH * 0.29)
       const lcX = lx0 + lR
 
+      // Concentric circle logo
       ctx.strokeStyle = 'rgba(249,115,22,0.28)'; ctx.lineWidth = Math.max(1, lR * 0.14)
       ctx.beginPath(); ctx.arc(lcX, bCY, lR, 0, Math.PI * 2); ctx.stroke()
       ctx.strokeStyle = 'rgba(249,115,22,0.62)'; ctx.lineWidth = Math.max(1.5, lR * 0.19)
@@ -197,10 +231,10 @@ export default function SharePage() {
       ctx.fillStyle = '#f97316'
       ctx.beginPath(); ctx.arc(lcX, bCY, lR * 0.30, 0, Math.PI * 2); ctx.fill()
 
-      // HALEA wordmark
-      const tX   = lcX + lR + Math.round(fmt.w * 0.014)
-      const tFS  = Math.round(barH * 0.40)
-      const sFS  = Math.round(barH * 0.185)
+      // HALEA wordmark + URL
+      const tX  = lcX + lR + Math.round(fmt.w * 0.014)
+      const tFS = Math.round(barH * 0.40)
+      const sFS = Math.round(barH * 0.185)
       ctx.fillStyle    = 'white'
       ctx.textAlign    = 'left'
       ctx.textBaseline = 'middle'
@@ -213,7 +247,6 @@ export default function SharePage() {
       // Right side: handle + look name
       const rPad = Math.round(fmt.w * 0.038)
       ctx.textAlign = 'right'
-
       if (handle) {
         const hFS = Math.round(barH * 0.26)
         ctx.fillStyle = 'rgba(255,255,255,0.80)'
@@ -229,7 +262,6 @@ export default function SharePage() {
 
       const dataUrl = canvas.toDataURL('image/jpeg', 0.95)
       setCardUrl(dataUrl)
-      // approx size in KB (base64 overhead ~4/3)
       setCardSize(Math.round(dataUrl.length * 0.75 / 1024))
     } catch (err) {
       console.error('Share card generation failed', err)
@@ -237,12 +269,10 @@ export default function SharePage() {
     setGenerating(false)
   }, [beforeSrc, afterSrc, format, handle, lookName])
 
-  // Re-render whenever inputs change
   useEffect(() => {
     if (beforeSrc && afterSrc) generateCard()
   }, [beforeSrc, afterSrc, format, handle, lookName, generateCard])
 
-  // ── File handling ─────────────────────────────────────────────────────────
   const handleFile = async (f: File, which: 'before' | 'after') => {
     const url = await fileToDataUrl(f)
     if (which === 'before') setBeforeSrc(url)
@@ -255,48 +285,6 @@ export default function SharePage() {
     a.href     = cardUrl
     a.download = `HALEA_ShareCard_${format}.jpg`
     a.click()
-  }
-
-  // ── Upload zone ───────────────────────────────────────────────────────────
-  const UploadZone = ({ which }: { which: 'before' | 'after' }) => {
-    const isDrag = which === 'before' ? dragBefore : dragAfter
-    const setDrag = which === 'before' ? setDragBefore : setDragAfter
-    const src    = which === 'before' ? beforeSrc : afterSrc
-    const lbl    = which === 'before' ? 'BEFORE'  : 'AFTER'
-    const accent = which === 'before' ? 'hover:border-b3' : 'hover:border-accent/50'
-    const lblCls = which === 'after'  ? 'text-accent bg-accent/20' : 'text-white/80 bg-black/60'
-
-    return (
-      <label
-        className={`relative flex flex-col items-center justify-center rounded-2xl border-2 border-dashed cursor-pointer transition-all overflow-hidden ${isDrag ? 'border-accent bg-accent/5 scale-[0.98]' : `border-b2 bg-s2 ${accent}`}`}
-        style={{ aspectRatio: '16/10' }}
-        onDragOver  ={e => { e.preventDefault(); setDrag(true) }}
-        onDragLeave ={() => setDrag(false)}
-        onDrop      ={e => { e.preventDefault(); setDrag(false); const f = e.dataTransfer.files[0]; if (f) handleFile(f, which) }}>
-        <input type="file" accept="image/*" className="sr-only"
-          onChange={e => { const f = e.target.files?.[0]; if (f) handleFile(f, which) }}/>
-        {src ? (
-          <>
-            <img src={src} alt={lbl} className="absolute inset-0 w-full h-full object-cover"/>
-            <div className="absolute inset-0 bg-gradient-to-t from-black/50 via-transparent to-transparent"/>
-            <span className={`absolute bottom-3 left-3 text-[10px] font-black tracking-widest px-2.5 py-1.5 rounded-full backdrop-blur-sm ${lblCls}`}>
-              {lbl}
-            </span>
-            <span className="absolute top-2 right-2 text-[9px] text-white/50 bg-black/50 px-2 py-0.5 rounded-full font-mono">
-              Ganti ↑
-            </span>
-          </>
-        ) : (
-          <div className="flex flex-col items-center gap-3 p-6 text-center select-none">
-            <span className="text-4xl opacity-20 leading-none">{which === 'before' ? '🖼' : '✦'}</span>
-            <div>
-              <p className="text-sm font-bold text-t2">{lbl}</p>
-              <p className="text-[10px] text-t3 mt-0.5">Drop atau klik untuk upload</p>
-            </div>
-          </div>
-        )}
-      </label>
-    )
   }
 
   const fmt = FORMATS[format]
@@ -329,7 +317,7 @@ export default function SharePage() {
 
         <div className="grid grid-cols-1 lg:grid-cols-[1fr_340px] gap-6 items-start">
 
-          {/* ── LEFT: Preview ───────────────────────────────────────────────── */}
+          {/* ── LEFT: Preview + uploads ──────────────────────────────────────── */}
           <div className="flex flex-col gap-4">
 
             {/* Canvas preview */}
@@ -352,7 +340,7 @@ export default function SharePage() {
                 <div className="flex flex-col items-center gap-4 py-12 text-t3">
                   <Share2 size={36} className="opacity-15"/>
                   <div className="text-center">
-                    <p className="text-sm font-bold">Upload Before & After</p>
+                    <p className="text-sm font-bold">Upload Before &amp; After</p>
                     <p className="text-xs mt-1 opacity-70">untuk preview share card</p>
                   </div>
                 </div>
@@ -362,21 +350,21 @@ export default function SharePage() {
 
             {/* Upload zones */}
             <div className="grid grid-cols-2 gap-3">
-              <UploadZone which="before"/>
-              <UploadZone which="after"/>
+              <UploadZone which="before" src={beforeSrc} onFile={f => handleFile(f, 'before')}/>
+              <UploadZone which="after"  src={afterSrc}  onFile={f => handleFile(f, 'after')}/>
             </div>
 
             {/* Tips */}
             <div className="bg-s2 border border-b1 rounded-2xl p-4">
               <p className="text-[9px] font-black tracking-widest uppercase text-t3 mb-3">Tips share</p>
-              <div className="grid grid-cols-2 gap-x-6 gap-y-2 text-[11px] text-t2">
+              <div className="grid grid-cols-2 gap-x-6 gap-y-2">
                 {[
-                  ['📸 Instagram Post', '1:1 — crop-safe, engagement tinggi'],
+                  ['📸 Instagram Post',  '1:1 — crop-safe, engagement tinggi'],
                   ['🖼 IG Feed Portrait', '4:5 — lebih besar di feed, reach ↑'],
-                  ['🎬 Reels & TikTok', '9:16 — tambah musik & caption di app'],
-                  ['🐦 Twitter/X', '16:9 — thumbnail preview penuh'],
-                  ['💡 Hashtag saran', '#HALEA #colorgrading #preset #LUT'],
-                  ['✨ Caption ide', '"Before vs After dengan LUT HALEA 🎞"'],
+                  ['🎬 Reels & TikTok',  '9:16 — tambah musik & caption di app'],
+                  ['🐦 Twitter/X',        '16:9 — thumbnail preview penuh'],
+                  ['💡 Hashtag saran',   '#HALEA #colorgrading #preset #LUT'],
+                  ['✨ Caption ide',      '"Before vs After dengan LUT HALEA 🎞"'],
                 ].map(([t, d]) => (
                   <div key={t}>
                     <p className="font-bold text-txt text-[11px]">{t}</p>
@@ -394,7 +382,7 @@ export default function SharePage() {
             <div className="bg-s2 border border-b1 rounded-2xl p-4">
               <p className="text-[9px] font-black tracking-widest uppercase text-t3 mb-3">Format</p>
               <div className="grid grid-cols-2 gap-2">
-                {(Object.entries(FORMATS) as [Fmt, (typeof FORMATS)[Fmt]][]).map(([key, f]) => (
+                {(Object.entries(FORMATS) as [Fmt, typeof FORMATS[Fmt]][]).map(([key, f]) => (
                   <button key={key} onClick={() => setFormat(key)}
                     className={`p-3.5 rounded-xl border text-left transition-all ${format === key ? 'border-accent bg-accent/10' : 'border-b1 bg-s3 hover:border-b3'}`}>
                     <p className={`font-black text-xl leading-none mb-1 ${format === key ? 'text-accent' : 'text-txt'}`}>
@@ -456,7 +444,6 @@ export default function SharePage() {
               File disimpan ke perangkat — upload langsung ke IG / TikTok / Twitter
             </p>
 
-            {/* Back to studio */}
             <div className="border-t border-b1 pt-4 text-center">
               <Link href="/studio"
                 className="text-[11px] text-t3 hover:text-accent transition-colors font-medium">

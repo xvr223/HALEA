@@ -1,7 +1,7 @@
 'use client'
 import { useState, useRef, useEffect, useCallback } from 'react'
 import { Badge, DropZone, toast } from '@/components/ui'
-import { Zap, Settings2, Film, Download, Package } from 'lucide-react'
+import { Zap, Settings2, Film, Download } from 'lucide-react'
 
 // ── Types ─────────────────────────────────────────────────────────────────────
 type NodeType = 'primary' | 'look' | 'halation'
@@ -9,8 +9,6 @@ interface GradeNode {
   id: string; type: NodeType; enabled: boolean
   params: Record<string, number | string>
 }
-interface SavedLUT { id: string; name: string; nodes: GradeNode[]; look: string }
-
 // ── Color Helpers ─────────────────────────────────────────────────────────────
 const clamp = (v: number, lo = 0, hi = 1) => v < lo ? lo : v > hi ? hi : v
 const luma  = (r: number, g: number, b: number) => 0.2126*r + 0.7152*g + 0.0722*b
@@ -127,7 +125,7 @@ const makeCubeContent = (lut:Float32Array, size:number) => {
   return c
 }
 
-type MobileTab = 'setup' | 'preview' | 'export' | 'pack'
+type MobileTab = 'setup' | 'preview' | 'export'
 
 // ── Component ─────────────────────────────────────────────────────────────────
 export default function StudioPage() {
@@ -145,11 +143,7 @@ export default function StudioPage() {
   const [splitPos,  setSplitPos]  = useState(50)
   const [grade,     setGrade]     = useState<GradeResult|null>(null)
   const [mobileTab, setMobileTab] = useState<MobileTab>('setup')
-  // New features
   const [skinGuard, setSkinGuard] = useState(false)
-  const [urlInput,  setUrlInput]  = useState('')
-  const [urlLoading,setUrlLoading]= useState(false)
-  const [savedLUTs, setSavedLUTs] = useState<SavedLUT[]>([])
 
   const splitRef = useRef<HTMLDivElement>(null)
   const rafRef   = useRef<number|null>(null)
@@ -208,30 +202,6 @@ export default function StudioPage() {
       setRefImg(c.toDataURL()); URL.revokeObjectURL(url)
       setGrade(null); setNodes([]); setAfterSrc(null); setLut(null)
     }; img.src=url
-  }
-
-  // URL style match
-  const handleUrlRef = (url: string) => {
-    if (!url.trim()) return
-    setUrlLoading(true)
-    const img=new Image()
-    img.crossOrigin='anonymous'
-    img.onload = () => {
-      const c=document.createElement('canvas')
-      const scale=Math.min(1, 400/img.width)
-      c.width=Math.round(img.width*scale); c.height=Math.round(img.height*scale)
-      c.getContext('2d')!.drawImage(img, 0, 0, c.width, c.height)
-      setRefData(c.getContext('2d')!.getImageData(0,0,c.width,c.height))
-      setRefImg(c.toDataURL())
-      setUrlInput(''); setUrlLoading(false)
-      setGrade(null); setNodes([]); setAfterSrc(null); setLut(null)
-      toast('✓ Gambar dari URL berhasil dimuat')
-    }
-    img.onerror = () => {
-      setUrlLoading(false)
-      toast('Gagal load URL. Download foto dulu, lalu upload.', 'err')
-    }
-    img.src = url
   }
 
   const handleFootage = (f: File) => {
@@ -323,27 +293,6 @@ export default function StudioPage() {
     toast('✓ Lightroom preset .xmp downloaded!')
   }
 
-  // LUT Pack Builder
-  const saveToPack = () => {
-    if (!nodes.length) { toast('Match Colors dulu', 'warn'); return }
-    const packName = lutName||'HALEA_LUT_'+String(savedLUTs.length+1).padStart(3,'0')
-    setSavedLUTs(prev=>[...prev,{id:mkId(),name:packName,nodes:[...nodes],look:grade?.look||'natural'}])
-    toast('✓ Disimpan ke Pack: '+packName)
-  }
-
-  const downloadPackItem = (item: SavedLUT) => {
-    const baked=bakeLUT(item.nodes, lutSize)
-    const a=document.createElement('a')
-    a.href=URL.createObjectURL(new Blob([makeCubeContent(baked,lutSize)]))
-    a.download=item.name+'.cube'; a.click()
-  }
-
-  const downloadAllPack = () => {
-    if (!savedLUTs.length) { toast('Pack kosong', 'warn'); return }
-    savedLUTs.forEach((item,i)=>setTimeout(()=>downloadPackItem(item),i*600))
-    toast(`⬇ Download ${savedLUTs.length} LUT dimulai...`)
-  }
-
   // Share Card — convert footSrc blob→dataURL, store in sessionStorage, open /share
   const openShareCard = async () => {
     if (!afterSrc) { toast('Bake LUT dulu untuk lihat After', 'err'); return }
@@ -401,20 +350,6 @@ export default function StudioPage() {
     </div>
   )
 
-  // ── Reusable URL input ─────────────────────────────────────────────────────
-  const UrlInput = () => (
-    <div className="flex gap-1.5 mb-3">
-      <input value={urlInput} onChange={e=>setUrlInput(e.target.value)}
-        onKeyDown={e=>e.key==='Enter'&&handleUrlRef(urlInput)}
-        placeholder="Paste URL gambar / foto referensi..."
-        className="flex-1 bg-s2 border border-b1 text-txt px-2.5 py-2 rounded-lg text-[11px] outline-none focus:border-a4 transition-colors placeholder:text-t3 min-w-0"/>
-      <button onClick={()=>handleUrlRef(urlInput)} disabled={urlLoading||!urlInput.trim()}
-        className="px-3 py-2 bg-a4/15 border border-a4/30 text-a4 rounded-lg text-[11px] font-bold hover:bg-a4/25 disabled:opacity-40 transition-colors flex-shrink-0 whitespace-nowrap">
-        {urlLoading?'⌛':'URL ↓'}
-      </button>
-    </div>
-  )
-
   // ── Skin Guard toggle ──────────────────────────────────────────────────────
   const SkinGuardToggle = ({label}:{label?:boolean}) => (
     <button onClick={()=>setSkinGuard(v=>!v)}
@@ -441,7 +376,6 @@ export default function StudioPage() {
           <div>
             <div className="flex items-center gap-2 mb-2"><span className="text-[9px] font-black tracking-widest uppercase text-accent">① Reference Photo</span><div className="flex-1 h-px bg-b1"/></div>
             <p className="text-[10px] text-t3 mb-2 leading-relaxed">Photo dengan look yang mau kamu tiru.</p>
-            <UrlInput/>
             {refImg ? (
               <div className="relative group mb-3">
                 <img src={refImg} alt="Reference" className="w-full h-36 object-cover rounded-xl border border-b1"/>
@@ -584,38 +518,6 @@ export default function StudioPage() {
             </button>
           )}
 
-          {/* LUT Pack Builder */}
-          <div className="border-t border-b1 pt-4">
-            <div className="flex items-center gap-2 mb-3">
-              <Package size={11} className="text-a2"/>
-              <span className="text-[9px] font-black tracking-widest uppercase text-a2">LUT Pack</span>
-              {savedLUTs.length>0&&<span className="ml-auto text-[9px] text-a2 font-bold">{savedLUTs.length} LUT</span>}
-            </div>
-            <button onClick={saveToPack} disabled={!nodes.length}
-              className="w-full py-2 rounded-xl text-[11px] font-bold border border-a2/30 bg-a2/10 text-a2 hover:bg-a2/20 disabled:opacity-30 disabled:cursor-not-allowed transition-colors mb-2">
-              + Simpan ke Pack
-            </button>
-            {savedLUTs.length>0&&(
-              <>
-                <div className="flex flex-col gap-1 mb-2 max-h-28 overflow-y-auto">
-                  {savedLUTs.map((item,i)=>(
-                    <div key={item.id} className="flex items-center justify-between px-2.5 py-1.5 bg-s2 border border-b1 rounded-lg">
-                      <span className="text-[10px] font-medium text-t2 truncate">{i+1}. {item.name}</span>
-                      <div className="flex items-center gap-1 flex-shrink-0">
-                        <button onClick={()=>downloadPackItem(item)} className="text-[9px] text-accent hover:text-orange-400 transition-colors font-bold">↓</button>
-                        <button onClick={()=>setSavedLUTs(p=>p.filter(x=>x.id!==item.id))} className="text-[9px] text-t3 hover:text-err transition-colors">✕</button>
-                      </div>
-                    </div>
-                  ))}
-                </div>
-                <button onClick={downloadAllPack}
-                  className="w-full py-2 rounded-xl text-[11px] font-bold bg-a2 text-black hover:bg-yellow-300 transition-colors">
-                  ⬇ Download All ({savedLUTs.length})
-                </button>
-              </>
-            )}
-          </div>
-
           {/* How to use */}
           <div className="space-y-2">
             <p className="text-[9px] font-black tracking-widest uppercase text-t3">Cara pakai</p>
@@ -669,8 +571,6 @@ export default function StudioPage() {
                 {refData&&<span className="text-[9px] text-ok font-bold flex-shrink-0">Ready ✓</span>}
               </div>
               <div className="p-4">
-                {/* URL input on mobile */}
-                <UrlInput/>
                 {refImg ? (
                   <div className="relative">
                     <img src={refImg} alt="Reference" className="w-full h-48 object-cover rounded-xl border border-b1"/>
@@ -870,42 +770,6 @@ export default function StudioPage() {
               </button>
             )}
 
-            {/* LUT Pack on mobile */}
-            {nodes.length>0&&(
-              <div className="bg-s2 border border-a2/20 rounded-2xl overflow-hidden">
-                <div className="px-4 py-3 border-b border-b1 flex items-center gap-2">
-                  <Package size={12} className="text-a2"/>
-                  <span className="text-[9px] font-black tracking-widest uppercase text-a2">LUT Pack Builder</span>
-                  {savedLUTs.length>0&&<span className="ml-auto text-[9px] text-a2 font-bold">{savedLUTs.length} disimpan</span>}
-                </div>
-                <div className="p-4 flex flex-col gap-3">
-                  <button onClick={saveToPack}
-                    className="w-full py-3 rounded-xl text-sm font-bold border border-a2/30 bg-a2/10 text-a2 hover:bg-a2/20 transition-colors active:scale-[0.97]">
-                    + Simpan ke Pack
-                  </button>
-                  {savedLUTs.length>0&&(
-                    <>
-                      <div className="flex flex-col gap-1.5 max-h-36 overflow-y-auto">
-                        {savedLUTs.map((item,i)=>(
-                          <div key={item.id} className="flex items-center justify-between px-3 py-2 bg-s3 border border-b1 rounded-xl">
-                            <span className="text-[11px] font-medium text-t2 truncate">{i+1}. {item.name}</span>
-                            <div className="flex gap-2 flex-shrink-0">
-                              <button onClick={()=>downloadPackItem(item)} className="text-xs text-accent font-bold">↓</button>
-                              <button onClick={()=>setSavedLUTs(p=>p.filter(x=>x.id!==item.id))} className="text-xs text-t3">✕</button>
-                            </div>
-                          </div>
-                        ))}
-                      </div>
-                      <button onClick={downloadAllPack}
-                        className="w-full py-3 rounded-xl text-sm font-bold bg-a2 text-black active:scale-[0.97] transition-all">
-                        ⬇ Download All ({savedLUTs.length} LUT)
-                      </button>
-                    </>
-                  )}
-                </div>
-              </div>
-            )}
-
             {lut&&(
               <div className="bg-s2 border border-b1 rounded-2xl overflow-hidden">
                 {[['LUT Size',lutSize+'³ points'],['Active Nodes',nodes.filter(n=>n.enabled).length+' nodes'],['Look Preset',grade?.look||'natural']].map(([k,v])=>(
@@ -934,47 +798,15 @@ export default function StudioPage() {
           </div>
         </div>
 
-        {/* ── PACK TAB (mobile only) ── */}
-        <div className={`absolute inset-0 overflow-y-auto transition-opacity duration-200 ${mobileTab==='pack'?'opacity-100 pointer-events-auto':'opacity-0 pointer-events-none'}`}>
-          <div className="p-5 flex flex-col gap-5" style={{paddingBottom:'120px'}}>
-            <div className="text-center pt-2">
-              <Package size={28} className="text-a2 mx-auto mb-2 opacity-70"/>
-              <h1 className="font-fraunces text-2xl font-semibold">LUT <span className="italic text-a2">Pack</span></h1>
-              <p className="text-[11px] text-t3 mt-1">Kumpulkan beberapa LUT jadi satu pack</p>
-            </div>
-            {savedLUTs.length===0?(
-              <div className="bg-s2 border border-dashed border-b2 rounded-2xl p-10 text-center">
-                <p className="text-t3 text-sm mb-2">Pack kosong</p>
-                <p className="text-t3 text-xs">Buat LUT di tab Export, lalu klik &quot;Simpan ke Pack&quot;</p>
-              </div>
-            ):(
-              <>
-                {savedLUTs.map((item,i)=>(
-                  <div key={item.id} className="flex items-center justify-between bg-s2 border border-b1 rounded-xl px-4 py-3.5">
-                    <div><p className="text-sm font-bold">{i+1}. {item.name}</p><p className="text-[10px] text-t3 capitalize mt-0.5">Look: {item.look}</p></div>
-                    <div className="flex gap-2">
-                      <button onClick={()=>downloadPackItem(item)} className="px-3 py-1.5 bg-accent/10 border border-accent/30 text-accent text-xs font-bold rounded-lg">↓</button>
-                      <button onClick={()=>setSavedLUTs(p=>p.filter(x=>x.id!==item.id))} className="px-3 py-1.5 bg-err/10 border border-err/20 text-err text-xs font-bold rounded-lg">✕</button>
-                    </div>
-                  </div>
-                ))}
-                <button onClick={downloadAllPack} className="w-full py-4 bg-a2 text-black rounded-2xl text-sm font-black shadow-xl active:scale-[0.97] transition-all">
-                  ⬇ Download Semua ({savedLUTs.length} LUT)
-                </button>
-              </>
-            )}
-          </div>
-        </div>
       </div>
 
-      {/* Bottom tab bar — 4 tabs on mobile */}
-      <div className="flex-shrink-0 border-t border-b1 glass grid grid-cols-4"
+      {/* Bottom tab bar */}
+      <div className="flex-shrink-0 border-t border-b1 glass grid grid-cols-3"
         style={{paddingBottom:'env(safe-area-inset-bottom,0px)'}}>
         {([
           {id:'setup'   as MobileTab, label:'Setup',   Icon:Settings2, badge:!refData||!footImg},
           {id:'preview' as MobileTab, label:'Preview', Icon:Film,      badge:!!afterSrc},
           {id:'export'  as MobileTab, label:'Export',  Icon:Download,  badge:!!lut},
-          {id:'pack'    as MobileTab, label:'Pack',    Icon:Package,   badge:savedLUTs.length>0},
         ]).map(({id,label,Icon,badge})=>(
           <button key={id} onClick={()=>setMobileTab(id)}
             className={`relative flex flex-col items-center gap-1 py-3.5 transition-all ${mobileTab===id?'text-accent':'text-t3'}`}>
