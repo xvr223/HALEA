@@ -311,7 +311,7 @@ export default function StudioPage() {
       sessionStorage.setItem('halea_share_before', beforeData)
       sessionStorage.setItem('halea_share_after',  afterSrc)
       sessionStorage.setItem('halea_share_grade',  grade?.look || '')
-      window.open('/share', '_blank')
+      window.location.href = '/share'
     } catch {
       toast('Gagal membuka Share Card', 'err')
     }
