@@ -229,6 +229,34 @@ function castName(da: number, db: number): string {
   return 'Magenta'
 }
 
+// ── Apply a computed match to one pixel (sRGB 0–1 in/out) ─────────────────────
+export function applyMatch(r: number, g: number, b: number, m: SmartMatchResult, amount: number): [number, number, number] {
+  const [oL, oA, oB] = srgbToOklab(r, g, b)
+  const dL = oL - m.muF[0], dA = oA - m.muF[1], dB = oB - m.muF[2]
+  const T = m.matrix
+  let nL = T[0] * dL + T[1] * dA + T[2] * dB + m.muR[0]
+  const nA = T[3] * dL + T[4] * dA + T[5] * dB + m.muR[1]
+  const nB = T[6] * dL + T[7] * dA + T[8] * dB + m.muR[2]
+  nL = sampleCurve(m.curve, nL)
+  const [mr, mg, mb] = oklabToSrgb(nL, nA, nB)
+  return [
+    clamp01(r + (mr - r) * amount),
+    clamp01(g + (mg - g) * amount),
+    clamp01(b + (mb - b) * amount),
+  ]
+}
+
+// ── Bake a match straight into a 3D LUT grid ──────────────────────────────────
+export function bakeMatchLUT(m: SmartMatchResult, amount: number, size = 33): Float32Array {
+  const lut = new Float32Array(size ** 3 * 3)
+  let i = 0
+  for (let bi = 0; bi < size; bi++) for (let gi = 0; gi < size; gi++) for (let ri = 0; ri < size; ri++) {
+    const [r, g, b] = applyMatch(ri / (size - 1), gi / (size - 1), bi / (size - 1), m, amount)
+    lut[i++] = r; lut[i++] = g; lut[i++] = b
+  }
+  return lut
+}
+
 // ── Main entry ────────────────────────────────────────────────────────────────
 export function computeSmartMatch(foot: ImageData, ref: ImageData): SmartMatchResult {
   const F = collectStats(foot)

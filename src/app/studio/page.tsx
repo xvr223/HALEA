@@ -1,5 +1,6 @@
 'use client'
 import { useState, useRef, useEffect, useCallback } from 'react'
+import Link from 'next/link'
 import { Badge, DropZone, toast } from '@/components/ui'
 import { Zap, Settings2, Film, Download } from 'lucide-react'
 import { computeSmartMatch, srgbToOklab, oklabToSrgb, parseCurve, sampleCurve } from '@/lib/colorMatch'
@@ -612,6 +613,12 @@ export default function StudioPage() {
             </button>
           )}
 
+          {/* Shot Matcher promo */}
+          <Link href="/matcher"
+            className="block w-full py-2.5 rounded-xl text-[11px] font-bold border border-b2 bg-s2 text-t2 hover:border-accent/40 hover:text-accent transition-colors text-center">
+            🎬 Banyak klip beda warna? Shot Matcher →
+          </Link>
+
           {/* How to use */}
           <div className="space-y-2">
             <p className="text-[9px] font-black tracking-widest uppercase text-t3">Cara pakai</p>
@@ -866,6 +873,12 @@ export default function StudioPage() {
                 🃏 Buat Share Card untuk Sosmed
               </button>
             )}
+
+            {/* Shot Matcher promo */}
+            <Link href="/matcher"
+              className="block w-full py-3.5 rounded-2xl text-xs font-bold border border-b2 bg-s2 text-t2 active:scale-[0.97] transition-all text-center">
+              🎬 Banyak klip beda warna? Coba Shot Matcher →
+            </Link>
 
             {lut&&(
               <div className="bg-s2 border border-b1 rounded-2xl overflow-hidden">
