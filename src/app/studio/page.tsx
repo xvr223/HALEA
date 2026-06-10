@@ -1,7 +1,7 @@
 'use client'
 import { useState, useRef, useEffect, useCallback } from 'react'
 import { Badge, DropZone, toast } from '@/components/ui'
-import { Zap, Settings2, Film, Download } from 'lucide-react'
+import { Zap, Settings2, Film, Download, Package } from 'lucide-react'
 
 // ── Types ─────────────────────────────────────────────────────────────────────
 type NodeType = 'primary' | 'look' | 'halation'
@@ -9,6 +9,7 @@ interface GradeNode {
   id: string; type: NodeType; enabled: boolean
   params: Record<string, number | string>
 }
+interface SavedLUT { id: string; name: string; nodes: GradeNode[]; look: string }
 
 // ── Color Helpers ─────────────────────────────────────────────────────────────
 const clamp = (v: number, lo = 0, hi = 1) => v < lo ? lo : v > hi ? hi : v
@@ -24,6 +25,12 @@ function rgbToHsl(r: number, g: number, b: number): [number, number, number] {
   else if (max===g) h=((b-r)/d+2)/6
   else              h=((r-g)/d+4)/6
   return [h,s,l]
+}
+
+// Detects skin-tone pixels (red-orange hue, moderate sat/lightness)
+function isSkinTone(r: number, g: number, b: number): boolean {
+  const [h,s,l] = rgbToHsl(r,g,b)
+  return h>0.01 && h<0.14 && s>0.08 && s<0.72 && l>0.18 && l<0.88
 }
 
 // ── Color Science Engine ──────────────────────────────────────────────────────
@@ -114,8 +121,13 @@ function bakeLUT(nodes:GradeNode[],size:number):Float32Array{
 }
 
 const mkId=()=>'n'+Date.now()+Math.random().toString(36).slice(2,5)
+const makeCubeContent = (lut:Float32Array, size:number) => {
+  let c=`# HALEA — by @robbiesatriaa\nLUT_3D_SIZE ${size}\nDOMAIN_MIN 0.0 0.0 0.0\nDOMAIN_MAX 1.0 1.0 1.0\n\n`
+  for(let i=0;i<lut.length;i+=3) c+=`${lut[i].toFixed(6)} ${lut[i+1].toFixed(6)} ${lut[i+2].toFixed(6)}\n`
+  return c
+}
 
-type MobileTab = 'setup' | 'preview' | 'export'
+type MobileTab = 'setup' | 'preview' | 'export' | 'pack'
 
 // ── Component ─────────────────────────────────────────────────────────────────
 export default function StudioPage() {
@@ -133,16 +145,20 @@ export default function StudioPage() {
   const [splitPos,  setSplitPos]  = useState(50)
   const [grade,     setGrade]     = useState<GradeResult|null>(null)
   const [mobileTab, setMobileTab] = useState<MobileTab>('setup')
+  // New features
+  const [skinGuard, setSkinGuard] = useState(false)
+  const [urlInput,  setUrlInput]  = useState('')
+  const [urlLoading,setUrlLoading]= useState(false)
+  const [savedLUTs, setSavedLUTs] = useState<SavedLUT[]>([])
 
   const splitRef = useRef<HTMLDivElement>(null)
   const rafRef   = useRef<number|null>(null)
 
-  // Auto-switch to preview on mobile when result is ready
   useEffect(() => {
     if (afterSrc && typeof window !== 'undefined' && window.innerWidth < 768) setMobileTab('preview')
   }, [afterSrc])
 
-  // Real-time preview
+  // Real-time preview (with skin tone guard)
   useEffect(() => {
     if (!footImg || nodes.length===0) { setAfterSrc(null); return }
     if (rafRef.current) cancelAnimationFrame(rafRef.current)
@@ -150,16 +166,20 @@ export default function StudioPage() {
       const { data, width, height } = footImg
       const out = new Uint8ClampedArray(data.length)
       for (let i=0; i<data.length; i+=4) {
-        const [nr,ng,nb]=applyNodes(data[i]/255, data[i+1]/255, data[i+2]/255, nodes)
-        out[i]=Math.round(clamp(nr)*255); out[i+1]=Math.round(clamp(ng)*255)
-        out[i+2]=Math.round(clamp(nb)*255); out[i+3]=data[i+3]
+        const ro=data[i]/255, go=data[i+1]/255, bo=data[i+2]/255
+        const [nr,ng,nb]=applyNodes(ro, go, bo, nodes)
+        const blend = skinGuard && isSkinTone(ro, go, bo) ? 0.25 : 1.0
+        out[i]=Math.round(clamp(ro+(nr-ro)*blend)*255)
+        out[i+1]=Math.round(clamp(go+(ng-go)*blend)*255)
+        out[i+2]=Math.round(clamp(bo+(nb-bo)*blend)*255)
+        out[i+3]=data[i+3]
       }
       const c=document.createElement('canvas')
       c.width=width; c.height=height
       c.getContext('2d')!.putImageData(new ImageData(out,width,height), 0, 0)
       setAfterSrc(c.toDataURL('image/jpeg', 0.97))
     })
-  }, [nodes, footImg])
+  }, [nodes, footImg, skinGuard])
 
   const handleAnalyze = useCallback(() => {
     if (!refData) { toast('Upload reference photo dulu', 'err'); return }
@@ -190,18 +210,39 @@ export default function StudioPage() {
     }; img.src=url
   }
 
+  // URL style match
+  const handleUrlRef = (url: string) => {
+    if (!url.trim()) return
+    setUrlLoading(true)
+    const img=new Image()
+    img.crossOrigin='anonymous'
+    img.onload = () => {
+      const c=document.createElement('canvas')
+      const scale=Math.min(1, 400/img.width)
+      c.width=Math.round(img.width*scale); c.height=Math.round(img.height*scale)
+      c.getContext('2d')!.drawImage(img, 0, 0, c.width, c.height)
+      setRefData(c.getContext('2d')!.getImageData(0,0,c.width,c.height))
+      setRefImg(c.toDataURL())
+      setUrlInput(''); setUrlLoading(false)
+      setGrade(null); setNodes([]); setAfterSrc(null); setLut(null)
+      toast('✓ Gambar dari URL berhasil dimuat')
+    }
+    img.onerror = () => {
+      setUrlLoading(false)
+      toast('Gagal load URL. Download foto dulu, lalu upload.', 'err')
+    }
+    img.src = url
+  }
+
   const handleFootage = (f: File) => {
     const img=new Image(), url=URL.createObjectURL(f)
     img.onload = () => {
-      // Keep original blob URL for BEFORE display (crisp, no downscale)
       setFootSrc(url)
-      // Processing canvas — 900px for good quality afterSrc without being too slow
       const c=document.createElement('canvas')
       const scale=Math.min(1, 900/Math.max(img.width, img.height))
       c.width=Math.round(img.width*scale); c.height=Math.round(img.height*scale)
       c.getContext('2d')!.drawImage(img, 0, 0, c.width, c.height)
       setFootImg(c.getContext('2d')!.getImageData(0, 0, c.width, c.height))
-      // Note: do NOT revoke url here — it's used by footSrc for display
     }; img.src=url
   }
 
@@ -220,8 +261,7 @@ export default function StudioPage() {
     let content='', filename=''
     if (fmt==='cube') {
       filename=name+'.cube'
-      content=`# HALEA — by @robbiesatriaa\nLUT_3D_SIZE ${lutSize}\nDOMAIN_MIN 0.0 0.0 0.0\nDOMAIN_MAX 1.0 1.0 1.0\n\n`
-      for (let i=0;i<lut.length;i+=3) content+=`${lut[i].toFixed(6)} ${lut[i+1].toFixed(6)} ${lut[i+2].toFixed(6)}\n`
+      content=makeCubeContent(lut, lutSize)
     } else {
       filename=name+'.3dl'
       content=`3DMESH\nMesh 1 12\n0 ${(lutSize-1)*4} ${(lutSize-1)*4} ${(lutSize-1)*4}\n\n`
@@ -230,6 +270,102 @@ export default function StudioPage() {
     const a=document.createElement('a')
     a.href=URL.createObjectURL(new Blob([content])); a.download=filename; a.click()
     toast('✓ Downloaded: '+filename)
+  }
+
+  // CapCut: standard .cube format with CapCut suffix
+  const downloadCapCut = () => {
+    if (!lut) { toast('Bake LUT dulu', 'warn'); return }
+    const a=document.createElement('a')
+    a.href=URL.createObjectURL(new Blob([makeCubeContent(lut,lutSize)]))
+    a.download=(lutName||'HALEA_LUT')+'_CapCut.cube'; a.click()
+    toast('✓ CapCut LUT ready! Import di: Filter → + → Import LUT')
+  }
+
+  // Lightroom Mobile .xmp preset
+  const downloadXMP = () => {
+    if (!nodes.length) { toast('Match Colors dulu', 'warn'); return }
+    const primary = nodes.find(n=>n.type==='primary')
+    if (!primary) return
+    const p = primary.params
+    const temp  = Math.round(6500 + (p.temp as number)*3500)
+    const tint  = Math.round(-(p.tint as number)*80)
+    const expo  = ((p.gamma as number)*1.5).toFixed(2)
+    const con   = Math.round((p.con as number)*80)
+    const sat   = Math.round((p.sat as number)*80)
+    const blacks= Math.round((p.lift as number)*60)
+    const xmp = `<?xpacket begin="" id="W5M0MpCehiHzreSzNTczkc9d"?>
+<x:xmpmeta xmlns:x="adobe:ns:meta/">
+ <rdf:RDF xmlns:rdf="http://www.w3.org/1999/02/22-rdf-syntax-ns#">
+  <rdf:Description rdf:about=""
+    xmlns:crs="http://ns.adobe.com/camera-raw-settings/1.0/"
+    crs:ProcessVersion="11.0"
+    crs:WhiteBalance="Custom"
+    crs:Temperature="${temp}"
+    crs:Tint="${tint}"
+    crs:Exposure2012="${expo}"
+    crs:Contrast2012="${con}"
+    crs:Highlights2012="0"
+    crs:Shadows2012="${blacks}"
+    crs:Whites2012="0"
+    crs:Blacks2012="${blacks}"
+    crs:Clarity2012="0"
+    crs:Vibrance="0"
+    crs:Saturation="${sat}"
+    crs:PresetType="Normal"
+    crs:UUID="${mkId()}"
+  />
+ </rdf:RDF>
+</x:xmpmeta>
+<?xpacket end="w"?>`
+    const a=document.createElement('a')
+    a.href=URL.createObjectURL(new Blob([xmp],{type:'text/xml'}))
+    a.download=(lutName||'HALEA_Preset')+'.xmp'; a.click()
+    toast('✓ Lightroom preset .xmp downloaded!')
+  }
+
+  // LUT Pack Builder
+  const saveToPack = () => {
+    if (!nodes.length) { toast('Match Colors dulu', 'warn'); return }
+    const packName = lutName||'HALEA_LUT_'+String(savedLUTs.length+1).padStart(3,'0')
+    setSavedLUTs(prev=>[...prev,{id:mkId(),name:packName,nodes:[...nodes],look:grade?.look||'natural'}])
+    toast('✓ Disimpan ke Pack: '+packName)
+  }
+
+  const downloadPackItem = (item: SavedLUT) => {
+    const baked=bakeLUT(item.nodes, lutSize)
+    const a=document.createElement('a')
+    a.href=URL.createObjectURL(new Blob([makeCubeContent(baked,lutSize)]))
+    a.download=item.name+'.cube'; a.click()
+  }
+
+  const downloadAllPack = () => {
+    if (!savedLUTs.length) { toast('Pack kosong', 'warn'); return }
+    savedLUTs.forEach((item,i)=>setTimeout(()=>downloadPackItem(item),i*600))
+    toast(`⬇ Download ${savedLUTs.length} LUT dimulai...`)
+  }
+
+  // Share Card — convert footSrc blob→dataURL, store in sessionStorage, open /share
+  const openShareCard = async () => {
+    if (!afterSrc) { toast('Bake LUT dulu untuk lihat After', 'err'); return }
+    if (!footSrc)  { toast('Upload footage still dulu', 'err'); return }
+    try {
+      let beforeData = footSrc
+      if (footSrc.startsWith('blob:')) {
+        const img = new Image(); img.src = footSrc
+        await new Promise<void>(r => { img.onload = () => r() })
+        const c = document.createElement('canvas')
+        const scale = Math.min(1, 1080/Math.max(img.width, img.height))
+        c.width = Math.round(img.width*scale); c.height = Math.round(img.height*scale)
+        c.getContext('2d')!.drawImage(img, 0, 0, c.width, c.height)
+        beforeData = c.toDataURL('image/jpeg', 0.90)
+      }
+      sessionStorage.setItem('halea_share_before', beforeData)
+      sessionStorage.setItem('halea_share_after',  afterSrc)
+      sessionStorage.setItem('halea_share_grade',  grade?.look || '')
+      window.open('/share', '_blank')
+    } catch {
+      toast('Gagal membuka Share Card', 'err')
+    }
   }
 
   const gradeStats = grade ? [
@@ -247,7 +383,6 @@ export default function StudioPage() {
       <img src={afterSrc!} alt="After" draggable={false}
         className="absolute inset-0 w-full h-full object-contain pointer-events-none"
         style={{clipPath:`inset(0 0 0 ${splitPos}%)`}}/>
-      {/* divider line + handle knob */}
       <div className="absolute top-0 bottom-0 z-20 touch-none"
         style={{left:`${splitPos}%`,transform:'translateX(-50%)',width:mobile?'72px':'52px',cursor:'col-resize'}}
         onPointerDown={e=>e.currentTarget.setPointerCapture(e.pointerId)}
@@ -266,6 +401,31 @@ export default function StudioPage() {
     </div>
   )
 
+  // ── Reusable URL input ─────────────────────────────────────────────────────
+  const UrlInput = () => (
+    <div className="flex gap-1.5 mb-3">
+      <input value={urlInput} onChange={e=>setUrlInput(e.target.value)}
+        onKeyDown={e=>e.key==='Enter'&&handleUrlRef(urlInput)}
+        placeholder="Paste URL gambar / foto referensi..."
+        className="flex-1 bg-s2 border border-b1 text-txt px-2.5 py-2 rounded-lg text-[11px] outline-none focus:border-a4 transition-colors placeholder:text-t3 min-w-0"/>
+      <button onClick={()=>handleUrlRef(urlInput)} disabled={urlLoading||!urlInput.trim()}
+        className="px-3 py-2 bg-a4/15 border border-a4/30 text-a4 rounded-lg text-[11px] font-bold hover:bg-a4/25 disabled:opacity-40 transition-colors flex-shrink-0 whitespace-nowrap">
+        {urlLoading?'⌛':'URL ↓'}
+      </button>
+    </div>
+  )
+
+  // ── Skin Guard toggle ──────────────────────────────────────────────────────
+  const SkinGuardToggle = ({label}:{label?:boolean}) => (
+    <button onClick={()=>setSkinGuard(v=>!v)}
+      className={`flex items-center gap-2 px-3 py-2 rounded-xl border text-[10px] font-bold transition-all ${skinGuard?'bg-ok/10 border-ok/30 text-ok':'bg-s3 border-b2 text-t3 hover:border-b3'}`}>
+      <div className={`w-5 h-3 rounded-full relative transition-colors ${skinGuard?'bg-ok':'bg-b2'}`}>
+        <div className={`absolute top-0.5 w-2 h-2 rounded-full bg-white transition-all ${skinGuard?'left-2.5':'left-0.5'}`}/>
+      </div>
+      {label!==false&&<span>🎭 Skin Guard{skinGuard?' ON':''}</span>}
+    </button>
+  )
+
   return (
     <>
     {/* ═══════════════════════ DESKTOP md+ ═══════════════════════ */}
@@ -279,8 +439,9 @@ export default function StudioPage() {
         </div>
         <div className="flex-1 overflow-y-auto p-4 flex flex-col gap-5">
           <div>
-            <div className="flex items-center gap-2 mb-3"><span className="text-[9px] font-black tracking-widest uppercase text-accent">① Reference Photo</span><div className="flex-1 h-px bg-b1"/></div>
+            <div className="flex items-center gap-2 mb-2"><span className="text-[9px] font-black tracking-widest uppercase text-accent">① Reference Photo</span><div className="flex-1 h-px bg-b1"/></div>
             <p className="text-[10px] text-t3 mb-2 leading-relaxed">Photo dengan look yang mau kamu tiru.</p>
+            <UrlInput/>
             {refImg ? (
               <div className="relative group mb-3">
                 <img src={refImg} alt="Reference" className="w-full h-36 object-cover rounded-xl border border-b1"/>
@@ -319,6 +480,13 @@ export default function StudioPage() {
               </div>
             ) : <DropZone label="Drop footage still" sub="JPG · PNG · WEBP" icon="🎬" accept="image/*" onFile={handleFootage}/>}
           </div>
+          {/* Skin Tone Guard */}
+          {nodes.length>0&&(
+            <div className="flex items-center justify-between">
+              <SkinGuardToggle/>
+              {skinGuard&&<span className="text-[9px] text-ok">Kulit dilindungi</span>}
+            </div>
+          )}
         </div>
         <div className="p-3 border-t border-b1 flex flex-col gap-1.5">
           <button onClick={handleBake} disabled={nodes.length===0||baking}
@@ -334,6 +502,7 @@ export default function StudioPage() {
         <div className="h-10 flex-shrink-0 border-b border-b1 flex items-center px-4 gap-3">
           <span className="text-[9px] font-black tracking-widest uppercase text-t3">Preview</span>
           {afterSrc&&<span className="flex items-center gap-1.5 text-[9px] font-black uppercase text-ok"><span className="w-1.5 h-1.5 rounded-full bg-ok animate-pulse inline-block"/>LIVE</span>}
+          {skinGuard&&afterSrc&&<span className="text-[9px] text-ok font-bold">🎭 Skin Guard ON</span>}
           {lut&&<Badge color="accent">LUT Ready</Badge>}
           <span className="ml-auto text-[9px] text-t3 font-mono hidden sm:block">{afterSrc?'Geser ⇔ untuk compare':footImg?'Match Colors untuk preview':'Drop footage still di kiri'}</span>
         </div>
@@ -360,7 +529,7 @@ export default function StudioPage() {
       </div>
 
       {/* RIGHT */}
-      <div className="w-60 flex-shrink-0 border-l border-b1 flex flex-col">
+      <div className="w-64 flex-shrink-0 border-l border-b1 flex flex-col">
         <div className="h-10 border-b border-b1 flex items-center px-4">
           <span className="text-[9px] font-black tracking-widest uppercase text-t3">Export</span>
           {lut&&<span className="ml-auto"><Badge color="ok">Ready</Badge></span>}
@@ -371,32 +540,92 @@ export default function StudioPage() {
             <input value={lutName} onChange={e=>setLutName(e.target.value)}
               className="w-full bg-s2 border border-b1 text-txt px-3 py-2 rounded-lg text-sm outline-none focus:border-accent transition-colors"/>
           </div>
+
+          {/* Export grid 2x2 */}
           <div className="grid grid-cols-2 gap-2">
             {(['cube','3dl'] as const).map(fmt=>(
               <button key={fmt} onClick={()=>downloadLUT(fmt)} disabled={!lut}
-                className="flex flex-col items-center gap-1.5 bg-s2 border border-b1 rounded-xl p-3 hover:border-accent hover:bg-s3 transition-all disabled:opacity-30 disabled:cursor-not-allowed">
-                <span className="font-black text-lg text-txt leading-none">.{fmt}</span>
-                <span className="text-[9px] text-t3">{fmt==='cube'?'Resolve · PP':'Flame · Lustre'}</span>
+                className="flex flex-col items-center gap-1 bg-s2 border border-b1 rounded-xl p-3 hover:border-accent hover:bg-s3 transition-all disabled:opacity-30 disabled:cursor-not-allowed">
+                <span className="font-black text-base text-txt leading-none">.{fmt}</span>
+                <span className="text-[8px] text-t3 text-center leading-tight">{fmt==='cube'?'Resolve · PP':'Flame · Lustre'}</span>
               </button>
             ))}
+            <button onClick={downloadXMP} disabled={!nodes.length}
+              className="flex flex-col items-center gap-1 bg-s2 border border-b1 rounded-xl p-3 hover:border-a4 hover:bg-s3 transition-all disabled:opacity-30 disabled:cursor-not-allowed">
+              <span className="font-black text-base text-a4 leading-none">.xmp</span>
+              <span className="text-[8px] text-t3 text-center leading-tight">Lightroom Mobile</span>
+            </button>
+            <button onClick={downloadCapCut} disabled={!lut}
+              className="flex flex-col items-center gap-1 bg-s2 border border-b1 rounded-xl p-3 hover:border-ok hover:bg-s3 transition-all disabled:opacity-30 disabled:cursor-not-allowed">
+              <span className="font-black text-base text-ok leading-none">CC</span>
+              <span className="text-[8px] text-t3 text-center leading-tight">CapCut Pro</span>
+            </button>
           </div>
-          {!lut ? (
+
+          {!lut&&!nodes.length ? (
             <div className="bg-s2 border border-dashed border-b2 rounded-xl p-3 text-center">
-              <p className="text-[10px] text-t3 leading-relaxed">Klik <strong className="text-txt">Bake LUT</strong> untuk generate file export</p>
+              <p className="text-[10px] text-t3 leading-relaxed">Match Colors → Bake LUT untuk export</p>
             </div>
-          ) : (
+          ) : lut ? (
             <div className="bg-s2 border border-b1 rounded-xl overflow-hidden">
-              {[['Size',lutSize+'³'],['Nodes',nodes.filter(n=>n.enabled).length+' active']].map(([k,v])=>(
-                <div key={k} className="flex justify-between px-3 py-2 border-b border-b1 last:border-0 text-xs">
-                  <span className="text-t2">{k}</span><span className="text-accent font-mono font-bold">{v}</span>
+              {[['Size',lutSize+'³'],['Nodes',nodes.filter(n=>n.enabled).length+' active'],['Look',grade?.look||'—']].map(([k,v])=>(
+                <div key={k} className="flex justify-between px-3 py-1.5 border-b border-b1 last:border-0 text-xs">
+                  <span className="text-t2">{k}</span><span className="text-accent font-mono font-bold capitalize">{v}</span>
                 </div>
               ))}
             </div>
+          ) : null}
+
+          {/* Share Card */}
+          {afterSrc&&(
+            <button onClick={openShareCard}
+              className="w-full py-2.5 rounded-xl text-[11px] font-bold border border-a3/30 bg-a3/10 text-a3 hover:bg-a3/20 transition-colors flex items-center justify-center gap-1.5">
+              🃏 Buat Share Card
+            </button>
           )}
-          <div className="space-y-2 pt-1">
-            <p className="text-[9px] font-black tracking-widest uppercase text-t3">How to use</p>
-            {[['Premiere Pro','Lumetri → Creative → Look → Browse .cube'],['DaVinci Resolve','Color → LUTs → Refresh → paste .cube'],['After Effects','Effect → Apply Color LUT'],['CapCut Pro','Filter → Add → Import LUT']].map(([a,s])=>(
-              <div key={a}><p className="text-[10px] font-bold text-txt">{a}</p><p className="text-[10px] text-t3">{s}</p></div>
+
+          {/* LUT Pack Builder */}
+          <div className="border-t border-b1 pt-4">
+            <div className="flex items-center gap-2 mb-3">
+              <Package size={11} className="text-a2"/>
+              <span className="text-[9px] font-black tracking-widest uppercase text-a2">LUT Pack</span>
+              {savedLUTs.length>0&&<span className="ml-auto text-[9px] text-a2 font-bold">{savedLUTs.length} LUT</span>}
+            </div>
+            <button onClick={saveToPack} disabled={!nodes.length}
+              className="w-full py-2 rounded-xl text-[11px] font-bold border border-a2/30 bg-a2/10 text-a2 hover:bg-a2/20 disabled:opacity-30 disabled:cursor-not-allowed transition-colors mb-2">
+              + Simpan ke Pack
+            </button>
+            {savedLUTs.length>0&&(
+              <>
+                <div className="flex flex-col gap-1 mb-2 max-h-28 overflow-y-auto">
+                  {savedLUTs.map((item,i)=>(
+                    <div key={item.id} className="flex items-center justify-between px-2.5 py-1.5 bg-s2 border border-b1 rounded-lg">
+                      <span className="text-[10px] font-medium text-t2 truncate">{i+1}. {item.name}</span>
+                      <div className="flex items-center gap-1 flex-shrink-0">
+                        <button onClick={()=>downloadPackItem(item)} className="text-[9px] text-accent hover:text-orange-400 transition-colors font-bold">↓</button>
+                        <button onClick={()=>setSavedLUTs(p=>p.filter(x=>x.id!==item.id))} className="text-[9px] text-t3 hover:text-err transition-colors">✕</button>
+                      </div>
+                    </div>
+                  ))}
+                </div>
+                <button onClick={downloadAllPack}
+                  className="w-full py-2 rounded-xl text-[11px] font-bold bg-a2 text-black hover:bg-yellow-300 transition-colors">
+                  ⬇ Download All ({savedLUTs.length})
+                </button>
+              </>
+            )}
+          </div>
+
+          {/* How to use */}
+          <div className="space-y-2">
+            <p className="text-[9px] font-black tracking-widest uppercase text-t3">Cara pakai</p>
+            {[
+              ['Premiere Pro','Lumetri → Creative → Look → Browse .cube'],
+              ['DaVinci Resolve','Color → LUTs → Refresh → paste .cube'],
+              ['Lightroom Mobile','Preset → + → Import .xmp'],
+              ['CapCut Pro','Filter → + → Import LUT → .cube'],
+            ].map(([a,s])=>(
+              <div key={a}><p className="text-[10px] font-bold text-txt">{a}</p><p className="text-[10px] text-t3 leading-relaxed">{s}</p></div>
             ))}
           </div>
         </div>
@@ -406,21 +635,18 @@ export default function StudioPage() {
     {/* ═══════════════════════ MOBILE ═══════════════════════ */}
     <div className="md:hidden flex flex-col" style={{height:'calc(100dvh - 56px)'}}>
 
-      {/* Scrollable tab content */}
       <div className="flex-1 overflow-hidden relative">
 
         {/* ── SETUP TAB ── */}
         <div className={`absolute inset-0 overflow-y-auto transition-opacity duration-200 ${mobileTab==='setup'?'opacity-100 pointer-events-auto':'opacity-0 pointer-events-none'}`}>
           <div className="p-5 flex flex-col gap-5" style={{paddingBottom:'120px'}}>
 
-            {/* Hero */}
             <div className="text-center pt-2">
               <p className="text-[9px] font-black tracking-widest uppercase text-accent mb-2">Color Match Studio</p>
               <h1 className="font-fraunces text-3xl font-semibold">Match Any <span className="italic text-accent">Look</span></h1>
               <p className="text-[11px] text-t3 mt-2">Analisis warna referensi. Instant. Gratis.</p>
             </div>
 
-            {/* Progress steps */}
             <div className="flex items-center justify-center gap-1">
               {[{label:'Ref',done:!!refData},{label:'Analyze',done:!!grade},{label:'Footage',done:!!footImg},{label:'LUT',done:!!lut}].map((s,i)=>(
                 <div key={s.label} className="flex items-center gap-1">
@@ -432,7 +658,7 @@ export default function StudioPage() {
               ))}
             </div>
 
-            {/* Card: Reference photo */}
+            {/* Reference photo card */}
             <div className="bg-s2 border border-b1 rounded-2xl overflow-hidden shadow-lg">
               <div className="px-4 py-3.5 border-b border-b1 flex items-center gap-3">
                 <span className={`w-7 h-7 rounded-full flex items-center justify-center text-[11px] font-black flex-shrink-0 ${refData?'bg-ok text-white':'bg-accent/20 text-accent'}`}>{refData?'✓':'1'}</span>
@@ -443,6 +669,8 @@ export default function StudioPage() {
                 {refData&&<span className="text-[9px] text-ok font-bold flex-shrink-0">Ready ✓</span>}
               </div>
               <div className="p-4">
+                {/* URL input on mobile */}
+                <UrlInput/>
                 {refImg ? (
                   <div className="relative">
                     <img src={refImg} alt="Reference" className="w-full h-48 object-cover rounded-xl border border-b1"/>
@@ -459,18 +687,21 @@ export default function StudioPage() {
               </div>
             </div>
 
-            {/* Match Colors button */}
+            {/* Match Colors */}
             <button onClick={handleAnalyze} disabled={!refData||analyzing}
               className={`w-full py-4 rounded-2xl text-sm font-black uppercase tracking-widest transition-all active:scale-[0.97] flex items-center justify-center gap-2.5 ${
                 !refData?'bg-s3 border border-b1 text-t3 cursor-not-allowed':
                 analyzing?'bg-a4/40 text-black/60 border border-a4/20':
                 'bg-a4 text-black shadow-2xl shadow-a4/30'}`}>
-              {analyzing
-                ?<><span className="w-5 h-5 border-[3px] border-black/20 border-t-black rounded-full animate-spin"/>Analyzing...</>
-                :'✦ Match Colors'}
+              {analyzing?<><span className="w-5 h-5 border-[3px] border-black/20 border-t-black rounded-full animate-spin"/>Analyzing...</>:'✦ Match Colors'}
             </button>
 
-            {/* Grade result card */}
+            {/* Skin Guard toggle */}
+            {nodes.length>0&&(
+              <SkinGuardToggle/>
+            )}
+
+            {/* Grade result */}
             {grade&&(
               <div className="bg-s2 border border-b1 rounded-2xl overflow-hidden shadow-lg">
                 <div className="px-4 py-3 border-b border-b1 flex items-center gap-2.5">
@@ -493,7 +724,7 @@ export default function StudioPage() {
               </div>
             )}
 
-            {/* Card: Footage */}
+            {/* Footage card */}
             <div className="bg-s2 border border-b1 rounded-2xl overflow-hidden shadow-lg">
               <div className="px-4 py-3.5 border-b border-b1 flex items-center gap-3">
                 <span className={`w-7 h-7 rounded-full flex items-center justify-center text-[11px] font-black flex-shrink-0 ${footImg?'bg-ok text-white':'bg-s4 text-t3'}`}>{footImg?'✓':'2'}</span>
@@ -534,7 +765,6 @@ export default function StudioPage() {
               </button>
             )}
 
-            {/* Export shortcut */}
             {lut&&(
               <button onClick={()=>setMobileTab('export')}
                 className="w-full py-3.5 rounded-2xl text-sm font-bold border border-ok/30 bg-ok/10 text-ok flex items-center justify-center gap-2 active:scale-[0.97] transition-all">
@@ -549,14 +779,8 @@ export default function StudioPage() {
           {!footImg ? (
             <div className="h-full flex flex-col items-center justify-center gap-5 p-8 text-center">
               <span className="text-6xl opacity-20">🎬</span>
-              <div>
-                <p className="font-bold text-white/60 mb-1.5">Belum ada footage</p>
-                <p className="text-xs text-white/30">Upload footage still di tab Setup dulu</p>
-              </div>
-              <button onClick={()=>setMobileTab('setup')}
-                className="px-6 py-3 bg-accent text-white rounded-full text-sm font-bold shadow-lg shadow-accent/30">
-                Ke Setup ↑
-              </button>
+              <div><p className="font-bold text-white/60 mb-1.5">Belum ada footage</p><p className="text-xs text-white/30">Upload footage still di tab Setup dulu</p></div>
+              <button onClick={()=>setMobileTab('setup')} className="px-6 py-3 bg-accent text-white rounded-full text-sm font-bold shadow-lg shadow-accent/30">Ke Setup ↑</button>
             </div>
           ) : !afterSrc ? (
             <div className="relative h-full flex items-center justify-center">
@@ -566,23 +790,19 @@ export default function StudioPage() {
                   <span className="text-4xl block mb-3">✦</span>
                   <p className="font-fraunces text-xl text-white mb-1.5">Match Colors dulu</p>
                   <p className="text-xs text-white/50 mb-5 leading-relaxed">Upload reference photo di Setup<br/>lalu klik Match Colors</p>
-                  <button onClick={()=>setMobileTab('setup')}
-                    className="px-6 py-3 bg-a4 text-black rounded-full text-sm font-bold shadow-lg shadow-a4/30">
-                    ✦ Match Colors
-                  </button>
+                  <button onClick={()=>setMobileTab('setup')} className="px-6 py-3 bg-a4 text-black rounded-full text-sm font-bold shadow-lg shadow-a4/30">✦ Match Colors</button>
                 </div>
               </div>
             </div>
           ) : (
             <>
               <SplitViewer mobile/>
-              {/* LIVE badge */}
-              <div className="absolute top-4 right-4 z-30 bg-black/60 backdrop-blur-sm rounded-xl px-3 py-1.5 border border-white/10">
-                <span className="text-[9px] font-black uppercase text-ok flex items-center gap-1.5">
-                  <span className="w-1.5 h-1.5 rounded-full bg-ok animate-pulse"/>LIVE
-                </span>
+              <div className="absolute top-4 right-4 z-30 flex gap-2">
+                {skinGuard&&<div className="bg-ok/20 backdrop-blur-sm rounded-xl px-2.5 py-1.5 border border-ok/30"><span className="text-[9px] font-black uppercase text-ok">🎭 Skin Guard</span></div>}
+                <div className="bg-black/60 backdrop-blur-sm rounded-xl px-3 py-1.5 border border-white/10">
+                  <span className="text-[9px] font-black uppercase text-ok flex items-center gap-1.5"><span className="w-1.5 h-1.5 rounded-full bg-ok animate-pulse"/>LIVE</span>
+                </div>
               </div>
-              {/* Bake shortcut */}
               {!lut&&(
                 <div className="absolute bottom-6 left-0 right-0 flex justify-center z-30">
                   <button onClick={handleBake} disabled={baking}
@@ -599,13 +819,11 @@ export default function StudioPage() {
         {/* ── EXPORT TAB ── */}
         <div className={`absolute inset-0 overflow-y-auto transition-opacity duration-200 ${mobileTab==='export'?'opacity-100 pointer-events-auto':'opacity-0 pointer-events-none'}`}>
           <div className="p-5 flex flex-col gap-5" style={{paddingBottom:'120px'}}>
-
             <div className="text-center pt-2">
               <p className="text-[9px] font-black tracking-widest uppercase text-accent mb-2">Export</p>
               <h1 className="font-fraunces text-3xl font-semibold">Download <span className="italic text-accent">LUT</span></h1>
             </div>
 
-            {/* LUT Name */}
             <div className="bg-s2 border border-b1 rounded-2xl p-4">
               <label className="text-[9px] font-black tracking-widest uppercase text-t3 block mb-2">LUT Name</label>
               <input value={lutName} onChange={e=>setLutName(e.target.value)}
@@ -617,27 +835,77 @@ export default function StudioPage() {
                 <span className="text-5xl opacity-20 block mb-4">📦</span>
                 <p className="font-bold text-t2 mb-1.5">Belum ada LUT</p>
                 <p className="text-xs text-t3 mb-5 leading-relaxed">Match Colors & Bake LUT dulu di Setup</p>
-                <button onClick={()=>setMobileTab('setup')}
-                  className="px-6 py-3 bg-s3 border border-b2 text-txt rounded-full text-xs font-bold">
-                  Ke Setup ↑
-                </button>
+                <button onClick={()=>setMobileTab('setup')} className="px-6 py-3 bg-s3 border border-b2 text-txt rounded-full text-xs font-bold">Ke Setup ↑</button>
               </div>
             ) : (
-              <div className="flex flex-col gap-3">
+              <div className="grid grid-cols-2 gap-3">
                 <button onClick={()=>downloadLUT('cube')}
-                  className="w-full py-5 bg-accent text-white rounded-2xl shadow-2xl shadow-accent/30 active:scale-[0.97] transition-all">
-                  <span className="text-xl font-black block">⬇ .cube</span>
-                  <span className="text-xs opacity-70 font-normal mt-0.5 block">DaVinci Resolve · Premiere · After Effects</span>
+                  className="py-5 bg-accent text-white rounded-2xl shadow-2xl shadow-accent/30 active:scale-[0.97] transition-all">
+                  <span className="text-lg font-black block">⬇ .cube</span>
+                  <span className="text-[10px] opacity-70 font-normal mt-0.5 block">Resolve · PP · AE</span>
                 </button>
                 <button onClick={()=>downloadLUT('3dl')}
-                  className="w-full py-5 bg-s3 border border-b2 text-txt rounded-2xl active:scale-[0.97] transition-all">
-                  <span className="text-xl font-black block">⬇ .3dl</span>
-                  <span className="text-xs text-t3 font-normal mt-0.5 block">Autodesk Flame · Lustre</span>
+                  className="py-5 bg-s3 border border-b2 text-txt rounded-2xl active:scale-[0.97] transition-all">
+                  <span className="text-lg font-black block">⬇ .3dl</span>
+                  <span className="text-[10px] text-t3 font-normal mt-0.5 block">Flame · Lustre</span>
+                </button>
+                <button onClick={downloadXMP}
+                  className="py-5 bg-s3 border border-a4/30 rounded-2xl active:scale-[0.97] transition-all">
+                  <span className="text-lg font-black text-a4 block">⬇ .xmp</span>
+                  <span className="text-[10px] text-t3 font-normal mt-0.5 block">Lightroom Mobile</span>
+                </button>
+                <button onClick={downloadCapCut}
+                  className="py-5 bg-s3 border border-ok/30 rounded-2xl active:scale-[0.97] transition-all">
+                  <span className="text-lg font-black text-ok block">⬇ CC</span>
+                  <span className="text-[10px] text-t3 font-normal mt-0.5 block">CapCut Pro</span>
                 </button>
               </div>
             )}
 
-            {/* LUT info */}
+            {/* Share Card */}
+            {afterSrc&&(
+              <button onClick={openShareCard}
+                className="w-full py-4 rounded-2xl text-sm font-bold border border-a3/30 bg-a3/10 text-a3 active:scale-[0.97] transition-all flex items-center justify-center gap-2">
+                🃏 Buat Share Card untuk Sosmed
+              </button>
+            )}
+
+            {/* LUT Pack on mobile */}
+            {nodes.length>0&&(
+              <div className="bg-s2 border border-a2/20 rounded-2xl overflow-hidden">
+                <div className="px-4 py-3 border-b border-b1 flex items-center gap-2">
+                  <Package size={12} className="text-a2"/>
+                  <span className="text-[9px] font-black tracking-widest uppercase text-a2">LUT Pack Builder</span>
+                  {savedLUTs.length>0&&<span className="ml-auto text-[9px] text-a2 font-bold">{savedLUTs.length} disimpan</span>}
+                </div>
+                <div className="p-4 flex flex-col gap-3">
+                  <button onClick={saveToPack}
+                    className="w-full py-3 rounded-xl text-sm font-bold border border-a2/30 bg-a2/10 text-a2 hover:bg-a2/20 transition-colors active:scale-[0.97]">
+                    + Simpan ke Pack
+                  </button>
+                  {savedLUTs.length>0&&(
+                    <>
+                      <div className="flex flex-col gap-1.5 max-h-36 overflow-y-auto">
+                        {savedLUTs.map((item,i)=>(
+                          <div key={item.id} className="flex items-center justify-between px-3 py-2 bg-s3 border border-b1 rounded-xl">
+                            <span className="text-[11px] font-medium text-t2 truncate">{i+1}. {item.name}</span>
+                            <div className="flex gap-2 flex-shrink-0">
+                              <button onClick={()=>downloadPackItem(item)} className="text-xs text-accent font-bold">↓</button>
+                              <button onClick={()=>setSavedLUTs(p=>p.filter(x=>x.id!==item.id))} className="text-xs text-t3">✕</button>
+                            </div>
+                          </div>
+                        ))}
+                      </div>
+                      <button onClick={downloadAllPack}
+                        className="w-full py-3 rounded-xl text-sm font-bold bg-a2 text-black active:scale-[0.97] transition-all">
+                        ⬇ Download All ({savedLUTs.length} LUT)
+                      </button>
+                    </>
+                  )}
+                </div>
+              </div>
+            )}
+
             {lut&&(
               <div className="bg-s2 border border-b1 rounded-2xl overflow-hidden">
                 {[['LUT Size',lutSize+'³ points'],['Active Nodes',nodes.filter(n=>n.enabled).length+' nodes'],['Look Preset',grade?.look||'natural']].map(([k,v])=>(
@@ -649,16 +917,13 @@ export default function StudioPage() {
               </div>
             )}
 
-            {/* How to use */}
             <div className="bg-s2 border border-b1 rounded-2xl overflow-hidden">
-              <div className="px-4 py-3 border-b border-b1">
-                <p className="text-[9px] font-black tracking-widest uppercase text-t3">Cara pakai di app editing</p>
-              </div>
+              <div className="px-4 py-3 border-b border-b1"><p className="text-[9px] font-black tracking-widest uppercase text-t3">Cara pakai di app editing</p></div>
               {[
                 {app:'Premiere Pro',    s:'Lumetri Color → Creative → Look → Browse → pilih .cube'},
                 {app:'DaVinci Resolve', s:'Color page → LUTs → Refresh → drag ke node'},
-                {app:'After Effects',   s:'Layer → Effect → Utility → Apply Color LUT'},
-                {app:'CapCut Pro',      s:'Filter → tambah → Import LUT → pilih .cube'},
+                {app:'Lightroom Mobile',s:'Preset → + (import) → pilih .xmp'},
+                {app:'CapCut Pro',      s:'Filter → + → Import LUT → pilih .cube'},
               ].map(({app,s})=>(
                 <div key={app} className="px-4 py-3.5 border-b border-b1 last:border-0">
                   <p className="text-sm font-bold text-txt mb-1">{app}</p>
@@ -668,28 +933,55 @@ export default function StudioPage() {
             </div>
           </div>
         </div>
+
+        {/* ── PACK TAB (mobile only) ── */}
+        <div className={`absolute inset-0 overflow-y-auto transition-opacity duration-200 ${mobileTab==='pack'?'opacity-100 pointer-events-auto':'opacity-0 pointer-events-none'}`}>
+          <div className="p-5 flex flex-col gap-5" style={{paddingBottom:'120px'}}>
+            <div className="text-center pt-2">
+              <Package size={28} className="text-a2 mx-auto mb-2 opacity-70"/>
+              <h1 className="font-fraunces text-2xl font-semibold">LUT <span className="italic text-a2">Pack</span></h1>
+              <p className="text-[11px] text-t3 mt-1">Kumpulkan beberapa LUT jadi satu pack</p>
+            </div>
+            {savedLUTs.length===0?(
+              <div className="bg-s2 border border-dashed border-b2 rounded-2xl p-10 text-center">
+                <p className="text-t3 text-sm mb-2">Pack kosong</p>
+                <p className="text-t3 text-xs">Buat LUT di tab Export, lalu klik &quot;Simpan ke Pack&quot;</p>
+              </div>
+            ):(
+              <>
+                {savedLUTs.map((item,i)=>(
+                  <div key={item.id} className="flex items-center justify-between bg-s2 border border-b1 rounded-xl px-4 py-3.5">
+                    <div><p className="text-sm font-bold">{i+1}. {item.name}</p><p className="text-[10px] text-t3 capitalize mt-0.5">Look: {item.look}</p></div>
+                    <div className="flex gap-2">
+                      <button onClick={()=>downloadPackItem(item)} className="px-3 py-1.5 bg-accent/10 border border-accent/30 text-accent text-xs font-bold rounded-lg">↓</button>
+                      <button onClick={()=>setSavedLUTs(p=>p.filter(x=>x.id!==item.id))} className="px-3 py-1.5 bg-err/10 border border-err/20 text-err text-xs font-bold rounded-lg">✕</button>
+                    </div>
+                  </div>
+                ))}
+                <button onClick={downloadAllPack} className="w-full py-4 bg-a2 text-black rounded-2xl text-sm font-black shadow-xl active:scale-[0.97] transition-all">
+                  ⬇ Download Semua ({savedLUTs.length} LUT)
+                </button>
+              </>
+            )}
+          </div>
+        </div>
       </div>
 
-      {/* Bottom tab bar */}
-      <div className="flex-shrink-0 border-t border-b1 glass grid grid-cols-3"
+      {/* Bottom tab bar — 4 tabs on mobile */}
+      <div className="flex-shrink-0 border-t border-b1 glass grid grid-cols-4"
         style={{paddingBottom:'env(safe-area-inset-bottom,0px)'}}>
         {([
           {id:'setup'   as MobileTab, label:'Setup',   Icon:Settings2, badge:!refData||!footImg},
           {id:'preview' as MobileTab, label:'Preview', Icon:Film,      badge:!!afterSrc},
           {id:'export'  as MobileTab, label:'Export',  Icon:Download,  badge:!!lut},
+          {id:'pack'    as MobileTab, label:'Pack',    Icon:Package,   badge:savedLUTs.length>0},
         ]).map(({id,label,Icon,badge})=>(
           <button key={id} onClick={()=>setMobileTab(id)}
             className={`relative flex flex-col items-center gap-1 py-3.5 transition-all ${mobileTab===id?'text-accent':'text-t3'}`}>
-            {/* active indicator bar */}
-            {mobileTab===id&&(
-              <span className="absolute top-0 left-1/2 -translate-x-1/2 w-8 h-0.5 bg-accent rounded-full"/>
-            )}
+            {mobileTab===id&&<span className="absolute top-0 left-1/2 -translate-x-1/2 w-8 h-0.5 bg-accent rounded-full"/>}
             <Icon size={20} strokeWidth={mobileTab===id?2.5:1.5}/>
             <span className="text-[10px] font-bold">{label}</span>
-            {/* notification dot */}
-            {badge&&id!==mobileTab&&(
-              <span className="absolute top-2.5 right-[calc(50%-20px)] w-2 h-2 rounded-full bg-ok border-2 border-s1"/>
-            )}
+            {badge&&id!==mobileTab&&<span className="absolute top-2.5 right-[calc(50%-20px)] w-2 h-2 rounded-full bg-ok border-2 border-s1"/>}
           </button>
         ))}
       </div>

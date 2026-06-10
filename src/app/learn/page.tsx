@@ -2,6 +2,7 @@
 import { useState } from 'react'
 
 const TOOLS = [
+  { id: 'grainGen',  icon: '🎞', title: 'Film Grain Generator', badge: 'NEW', color: 'text-accent' },
   { id: 'frameCalc', icon: '⏱', title: 'Frame Rate Calc', badge: 'CALC', color: 'text-a2' },
   { id: 'colorTemp', icon: '🌡', title: 'Color Temp Chart', badge: 'REF', color: 'text-warn' },
   { id: 'logGuide',  icon: '📊', title: 'Log Exposure Guide', badge: 'GUIDE', color: 'text-accent' },
@@ -23,6 +24,7 @@ const LESSONS = [
 ]
 
 const TOOL_CONTENT: Record<string, React.ReactNode> = {
+  grainGen:  <GrainGen />,
   frameCalc: <FrameCalc />,
   colorTemp: <ColorTempChart />,
   logGuide: <LogGuide />,
@@ -208,4 +210,86 @@ function ExportGuide() {
   const settings = [['YouTube 4K','H.264/265 · 3840×2160 · 35-45 Mbps'],['YouTube 1080p','H.264 · 1920×1080 · 15-20 Mbps'],['Instagram Reels','H.264 · 1080×1920 · 8-12 Mbps'],['TikTok','H.264 · 1080×1920 · 8-10 Mbps'],['Master/Archive','ProRes 422 HQ · match source res']]
   return (<div><h3 className="font-bold text-base mb-4">🚀 Export Settings</h3>
     {settings.map(([p,s])=>(<div key={p} className="bg-s3 rounded-xl px-4 py-3 mb-2"><p className="font-bold text-xs text-txt mb-0.5">{p}</p><p className="text-xs text-t2 font-mono">{s}</p></div>))}</div>)
+}
+
+function GrainGen() {
+  const [intensity, setIntensity] = useState(35)
+  const [res, setRes] = useState('1920x1080')
+  const [type, setType] = useState<'mono'|'warm'|'cool'|'film'>('warm')
+  const [generating, setGenerating] = useState(false)
+
+  const generate = () => {
+    setGenerating(true)
+    setTimeout(() => {
+      const [w, h] = res.split('x').map(Number)
+      const c = document.createElement('canvas')
+      c.width = w; c.height = h
+      const ctx = c.getContext('2d')!
+      const img = ctx.createImageData(w, h)
+      const d = img.data
+      for (let i = 0; i < d.length; i += 4) {
+        const n = (Math.random() * 2 - 1) * intensity
+        // Layered noise for more organic film feel
+        const n2 = (Math.random() * 2 - 1) * intensity * 0.3
+        let r = 128 + n + n2
+        let g = 128 + n + n2 * 0.8
+        let b = 128 + n + n2 * 0.6
+        if (type === 'warm') { r += 10; b -= 12 }
+        else if (type === 'cool') { r -= 8; b += 14 }
+        else if (type === 'film') { r += 6; g += 1; b -= 8 } // CineStill-like halation tint
+        d[i]   = Math.max(0, Math.min(255, r))
+        d[i+1] = Math.max(0, Math.min(255, g))
+        d[i+2] = Math.max(0, Math.min(255, b))
+        d[i+3] = 255
+      }
+      ctx.putImageData(img, 0, 0)
+      const a = document.createElement('a')
+      a.href = c.toDataURL('image/png')
+      a.download = `HALEA_Grain_${type}_${intensity}.png`
+      a.click()
+      setGenerating(false)
+    }, 50)
+  }
+
+  return (
+    <div>
+      <h3 className="font-bold text-base mb-1">🎞 Film Grain Generator</h3>
+      <p className="text-xs text-t3 mb-4 leading-relaxed">
+        Generate PNG overlay 50% gray dengan film grain. Di timeline: Import PNG → set blend mode <strong className="text-txt">Overlay</strong> atau <strong className="text-txt">Soft Light</strong> → turunin opacity 20–50%.
+      </p>
+      <div className="grid grid-cols-2 gap-3 mb-4">
+        <div>
+          <label className="text-[9px] font-black tracking-widest uppercase text-t3 block mb-1.5">Resolusi</label>
+          <select value={res} onChange={e=>setRes(e.target.value)} className="w-full bg-s3 border border-b1 text-txt px-3 py-2 rounded-lg text-sm outline-none">
+            {[['1920x1080','1080p Full HD'],['3840x2160','4K UHD'],['1080x1920','1080p Vertical']].map(([v,l])=><option key={v} value={v}>{l}</option>)}
+          </select>
+        </div>
+        <div>
+          <label className="text-[9px] font-black tracking-widest uppercase text-t3 block mb-1.5">Karakter Grain</label>
+          <select value={type} onChange={e=>setType(e.target.value as typeof type)} className="w-full bg-s3 border border-b1 text-txt px-3 py-2 rounded-lg text-sm outline-none">
+            <option value="mono">Mono (netral)</option>
+            <option value="warm">Warm (analog Kodak)</option>
+            <option value="cool">Cool (Fuji Superia)</option>
+            <option value="film">Film (CineStill-like)</option>
+          </select>
+        </div>
+      </div>
+      <div className="mb-4">
+        <label className="text-[9px] font-black tracking-widest uppercase text-t3 block mb-2">Intensitas — {intensity}</label>
+        <input type="range" min={10} max={80} value={intensity} onChange={e=>setIntensity(+e.target.value)} className="w-full"/>
+        <div className="flex justify-between text-[9px] text-t3 mt-1"><span>Halus</span><span>Kasar</span></div>
+      </div>
+      <div className="bg-s3 rounded-xl p-3 mb-4 text-xs text-t2 space-y-1 font-mono">
+        <p>Resolusi: <span className="text-accent">{res}</span></p>
+        <p>Tipe: <span className="text-accent capitalize">{type}</span></p>
+        <p>Intensitas: <span className="text-accent">{intensity}/80</span></p>
+        <p>File: <span className="text-accent">HALEA_Grain_{type}_{intensity}.png</span></p>
+      </div>
+      <button onClick={generate} disabled={generating}
+        className="w-full py-3 bg-accent text-white rounded-xl text-sm font-black hover:bg-orange-400 transition-colors disabled:opacity-50 flex items-center justify-center gap-2">
+        {generating?<><span className="w-4 h-4 border-2 border-white/30 border-t-white rounded-full animate-spin"/>Generating...</>:'⬇ Generate & Download PNG'}
+      </button>
+      <p className="text-[9px] text-t3 text-center mt-2">File besar (sekitar 10-20MB untuk 4K) — tunggu sebentar</p>
+    </div>
+  )
 }
