@@ -96,12 +96,12 @@ export default function SharePage() {
   const [lookName,   setLookName]   = useState('')
   const [cardUrl,    setCardUrl]    = useState<string | null>(null)
   const [generating, setGenerating] = useState(false)
-  const [isIOS,      setIsIOS]      = useState(false)
+  const [canNativeShare, setCanNativeShare] = useState(false)
   const canvasRef = useRef<HTMLCanvasElement>(null)
 
   useEffect(() => {
-    // Detect iOS — download behaves differently
-    setIsIOS(/iphone|ipad|ipod/i.test(navigator.userAgent))
+    // Check if browser supports native file sharing (iOS Safari 14+, Android Chrome)
+    setCanNativeShare(!!navigator.canShare)
     // Pre-fill from studio sessionStorage
     try {
       const b = sessionStorage.getItem('halea_share_before')
@@ -236,20 +236,34 @@ export default function SharePage() {
     else setAfterSrc(url)
   }
 
-  // iOS: open in new tab so user can long-press → Save to Photos
-  // Android/desktop: direct download
-  const download = () => {
+  const download = async () => {
     if (!cardUrl) return
-    if (isIOS) {
-      window.open(cardUrl, '_blank')
-    } else {
-      const a = document.createElement('a')
-      a.href = cardUrl
-      a.download = `HALEA_ShareCard_${format}.jpg`
-      document.body.appendChild(a)
-      a.click()
-      document.body.removeChild(a)
+    const filename = `HALEA_ShareCard_${format}.jpg`
+
+    // Try Web Share API first — works natively on iOS & Android
+    // Shows the system share sheet with "Save Image", AirDrop, etc.
+    if (canNativeShare) {
+      try {
+        const res  = await fetch(cardUrl)
+        const blob = await res.blob()
+        const file = new File([blob], filename, { type: 'image/jpeg' })
+        if (navigator.canShare({ files: [file] })) {
+          await navigator.share({ files: [file], title: 'HALEA Share Card' })
+          return
+        }
+      } catch (e) {
+        // User cancelled share or API failed — fall through to download
+        if ((e as Error).name === 'AbortError') return
+      }
     }
+
+    // Desktop fallback
+    const a = document.createElement('a')
+    a.href = cardUrl
+    a.download = filename
+    document.body.appendChild(a)
+    a.click()
+    document.body.removeChild(a)
   }
 
   const fmt = FORMATS[format]
@@ -312,12 +326,12 @@ export default function SharePage() {
               <canvas ref={canvasRef} className="sr-only" aria-hidden/>
             </div>
 
-            {/* iOS save tip */}
-            {cardUrl && isIOS && (
-              <div className="bg-accent/10 border border-accent/20 rounded-xl px-4 py-2.5 flex items-center gap-2">
-                <ImageIcon size={14} className="text-accent flex-shrink-0"/>
-                <p className="text-[11px] text-accent leading-snug">
-                  <strong>iOS:</strong> Tap tombol Download → gambar terbuka di tab baru → tekan &amp; tahan → &quot;Save to Photos&quot;
+            {/* Share tip for native share */}
+            {cardUrl && canNativeShare && (
+              <div className="bg-ok/10 border border-ok/20 rounded-xl px-4 py-2.5 flex items-center gap-2">
+                <ImageIcon size={14} className="text-ok flex-shrink-0"/>
+                <p className="text-[11px] text-ok leading-snug">
+                  Tap <strong>Download</strong> → share sheet terbuka → pilih <strong>Save Image</strong> untuk simpan ke Photos
                 </p>
               </div>
             )}
@@ -402,9 +416,9 @@ export default function SharePage() {
                   ? <><span className="w-5 h-5 border-[3px] border-white/30 border-t-white rounded-full animate-spin"/>Rendering...</>
                   : <><Download size={17}/>Download JPEG</>}
               </button>
-              {ready && isIOS && (
+              {ready && canNativeShare && (
                 <p className="text-[10px] text-t3 text-center mt-2 leading-relaxed">
-                  Gambar terbuka di tab baru → tekan &amp; tahan → Save to Photos
+                  Share sheet terbuka → pilih &quot;Save Image&quot; untuk simpan ke Photos
                 </p>
               )}
             </div>
@@ -435,7 +449,7 @@ export default function SharePage() {
             <button onClick={download}
               className="flex-1 py-3.5 bg-accent text-white rounded-2xl font-black text-sm uppercase tracking-widest flex items-center justify-center gap-2 shadow-xl shadow-accent/30 active:scale-[0.97] transition-all">
               <Download size={16}/>
-              {isIOS ? 'Buka & Simpan' : 'Download JPEG'}
+              {canNativeShare ? 'Simpan / Share' : 'Download JPEG'}
             </button>
             <button onClick={generateCard}
               className="w-12 h-12 rounded-2xl bg-s3 border border-b2 flex items-center justify-center text-t2 hover:border-b3 active:scale-[0.97] transition-all flex-shrink-0">
