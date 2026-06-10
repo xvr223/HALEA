@@ -2,9 +2,10 @@
 import { useState, useRef, useEffect, useCallback } from 'react'
 import { Badge, DropZone, toast } from '@/components/ui'
 import { Zap, Settings2, Film, Download } from 'lucide-react'
+import { computeSmartMatch, srgbToOklab, oklabToSrgb, parseCurve, sampleCurve } from '@/lib/colorMatch'
 
 // ── Types ─────────────────────────────────────────────────────────────────────
-type NodeType = 'primary' | 'look' | 'halation'
+type NodeType = 'primary' | 'look' | 'halation' | 'match'
 interface GradeNode {
   id: string; type: NodeType; enabled: boolean
   params: Record<string, number | string>
@@ -36,6 +37,7 @@ interface GradeResult {
   temp:number; tint:number; con:number; gamma:number
   sat:number; lift:number; halation:number
   look:string; lookAmount:number; desc:string
+  matched?:boolean; toneDesc?:string; shadowCast?:string; highCast?:string; satRatio?:number
 }
 
 function analyzeColorProfile(imageData: ImageData): GradeResult {
@@ -81,6 +83,20 @@ function applyNodes(r:number,g:number,b:number,nodes:GradeNode[]):[number,number
   for(const node of nodes){
     if(!node.enabled)continue
     const p=node.params
+    if(node.type==='match'){
+      // Smart Match: Oklab MKL transfer + CDF tone curve, blended by amount
+      const amount=p.amount as number
+      if(amount>0.001){
+        const [oL,oA,oB]=srgbToOklab(r,g,b)
+        const dL=oL-(p.fL as number), dA=oA-(p.fa as number), dB=oB-(p.fb as number)
+        let nL=(p.m0 as number)*dL+(p.m1 as number)*dA+(p.m2 as number)*dB+(p.rL as number)
+        const nA=(p.m3 as number)*dL+(p.m4 as number)*dA+(p.m5 as number)*dB+(p.ra as number)
+        const nB=(p.m6 as number)*dL+(p.m7 as number)*dA+(p.m8 as number)*dB+(p.rb as number)
+        nL=sampleCurve(parseCurve(p.curve as string),nL)
+        const [mr,mg,mb]=oklabToSrgb(nL,nA,nB)
+        r=clamp(r+(mr-r)*amount);g=clamp(g+(mg-g)*amount);b=clamp(b+(mb-b)*amount)
+      }
+    }
     if(node.type==='primary'){
       const lift=p.lift as number,gamma=p.gamma as number,temp=p.temp as number
       const tint=p.tint as number,con=p.con as number,sat=p.sat as number
@@ -109,10 +125,15 @@ function applyNodes(r:number,g:number,b:number,nodes:GradeNode[]):[number,number
   return[r,g,b]
 }
 
-function bakeLUT(nodes:GradeNode[],size:number):Float32Array{
+function bakeLUT(nodes:GradeNode[],size:number,skinGuard=false):Float32Array{
   const lut=new Float32Array(size**3*3);let i=0
   for(let bi=0;bi<size;bi++)for(let gi=0;gi<size;gi++)for(let ri=0;ri<size;ri++){
-    const[r,g,b]=applyNodes(ri/(size-1),gi/(size-1),bi/(size-1),nodes)
+    const r0=ri/(size-1),g0=gi/(size-1),b0=bi/(size-1)
+    let[r,g,b]=applyNodes(r0,g0,b0,nodes)
+    if(skinGuard&&isSkinTone(r0,g0,b0)){
+      // same 0.25 blend as the live preview, so exported LUT matches what user sees
+      r=r0+(r-r0)*0.25;g=g0+(g-g0)*0.25;b=b0+(b-b0)*0.25
+    }
     lut[i++]=clamp(r);lut[i++]=clamp(g);lut[i++]=clamp(b)
   }
   return lut
@@ -127,6 +148,21 @@ const makeCubeContent = (lut:Float32Array, size:number) => {
 }
 
 type MobileTab = 'setup' | 'preview' | 'export'
+
+// Hoisted so the range input keeps identity across renders (drag stays alive)
+function StrengthSlider({ value, onChange }:{ value:number; onChange:(v:number)=>void }) {
+  return (
+    <div className="bg-s3 border border-a4/25 rounded-xl p-3">
+      <div className="flex items-center justify-between mb-2">
+        <span className="text-[9px] font-black tracking-widest uppercase text-a4">✦ Match Strength</span>
+        <span className="text-[10px] font-mono font-bold text-a4">{Math.round(value*100)}%</span>
+      </div>
+      <input type="range" min={0} max={100} value={Math.round(value*100)}
+        onChange={e=>onChange(+e.target.value/100)} className="w-full accent-current text-a4"/>
+      <div className="flex justify-between text-[9px] text-t3 mt-1"><span>Subtle</span><span>Full match</span></div>
+    </div>
+  )
+}
 
 // ── Component ─────────────────────────────────────────────────────────────────
 export default function StudioPage() {
@@ -145,6 +181,7 @@ export default function StudioPage() {
   const [grade,     setGrade]     = useState<GradeResult|null>(null)
   const [mobileTab, setMobileTab] = useState<MobileTab>('setup')
   const [skinGuard, setSkinGuard] = useState(false)
+  const [matchAmount, setMatchAmount] = useState(0.8)
 
   const splitRef = useRef<HTMLDivElement>(null)
   const rafRef   = useRef<number|null>(null)
@@ -180,17 +217,54 @@ export default function StudioPage() {
     if (!refData) { toast('Upload reference photo dulu', 'err'); return }
     setAnalyzing(true); setLut(null)
     setTimeout(() => {
-      const g = analyzeColorProfile(refData)
-      setGrade(g)
-      setNodes([
-        { id:mkId(), type:'primary',  enabled:true, params:{ lift:g.lift, gamma:g.gamma, temp:g.temp, tint:g.tint, con:g.con, sat:g.sat } },
-        { id:mkId(), type:'look',     enabled:g.look!=='natural'&&g.lookAmount>0.1, params:{ look:g.look, amount:g.lookAmount } },
-        { id:mkId(), type:'halation', enabled:g.halation>0.05, params:{ threshold:0.65, intensity:g.halation } },
-      ])
+      if (footImg) {
+        // ── SMART MATCH: true color transfer footage → reference ──
+        const m = computeSmartMatch(footImg, refData)
+        setGrade({
+          temp:m.derived.temp, tint:m.derived.tint, con:m.derived.con,
+          gamma:m.derived.gamma, sat:m.derived.sat, lift:Math.max(0,m.curve[0]),
+          halation:m.halation, look:'smart', lookAmount:0,
+          desc:m.toneDesc, matched:true, toneDesc:m.toneDesc,
+          shadowCast:m.shadowCast, highCast:m.highCast, satRatio:m.satRatio,
+        })
+        setNodes([
+          { id:mkId(), type:'match', enabled:true, params:{
+              m0:m.matrix[0], m1:m.matrix[1], m2:m.matrix[2],
+              m3:m.matrix[3], m4:m.matrix[4], m5:m.matrix[5],
+              m6:m.matrix[6], m7:m.matrix[7], m8:m.matrix[8],
+              fL:m.muF[0], fa:m.muF[1], fb:m.muF[2],
+              rL:m.muR[0], ra:m.muR[1], rb:m.muR[2],
+              curve:Array.from(m.curve).map(v=>v.toFixed(5)).join(','),
+              amount:matchAmount } },
+          { id:mkId(), type:'halation', enabled:m.halation>0.05, params:{ threshold:0.65, intensity:m.halation } },
+        ])
+        toast('✦ Smart Match — footage dipetakan ke referensi')
+      } else {
+        // ── BASIC fallback: reference-only heuristic ──
+        const g = analyzeColorProfile(refData)
+        setGrade({ ...g, matched:false })
+        setNodes([
+          { id:mkId(), type:'primary',  enabled:true, params:{ lift:g.lift, gamma:g.gamma, temp:g.temp, tint:g.tint, con:g.con, sat:g.sat } },
+          { id:mkId(), type:'look',     enabled:g.look!=='natural'&&g.lookAmount>0.1, params:{ look:g.look, amount:g.lookAmount } },
+          { id:mkId(), type:'halation', enabled:g.halation>0.05, params:{ threshold:0.65, intensity:g.halation } },
+        ])
+        toast('✓ ' + g.desc + ' — upload footage untuk Smart Match ✦')
+      }
       setAnalyzing(false)
-      toast('✓ Color matched — ' + g.desc)
     }, 20)
-  }, [refData])
+  }, [refData, footImg, matchAmount])
+
+  // Auto re-match when footage changes: upgrades basic → smart, and re-fits
+  // the transform when the user swaps footage (matrix is footage-specific)
+  useEffect(() => {
+    if (footImg && refData && grade && !analyzing) handleAnalyze()
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [footImg])
+
+  const handleStrength = (v:number) => {
+    setMatchAmount(v)
+    setNodes(prev=>prev.map(n=>n.type==='match'?{...n,params:{...n.params,amount:v}}:n))
+  }
 
   const handleRefPhoto = (f: File) => {
     const img=new Image(), url=URL.createObjectURL(f)
@@ -221,10 +295,10 @@ export default function StudioPage() {
     if (nodes.length===0) { toast('Match Colors dulu', 'warn'); return }
     setBaking(true)
     await new Promise(r=>setTimeout(r,20))
-    setLut(bakeLUT(nodes, lutSize))
+    setLut(bakeLUT(nodes, lutSize, skinGuard))
     setBaking(false)
     toast('✓ LUT baked — siap di-export')
-  }, [nodes, lutSize])
+  }, [nodes, lutSize, skinGuard])
 
   const downloadLUT = (fmt: 'cube'|'3dl') => {
     if (!lut) { toast('Klik Bake LUT dulu', 'warn'); return }
@@ -254,17 +328,16 @@ export default function StudioPage() {
 
   // Lightroom Mobile .xmp preset
   const downloadXMP = () => {
-    if (!nodes.length) { toast('Match Colors dulu', 'warn'); return }
-    const primary = nodes.find(n=>n.type==='primary')
-    if (!primary) return
-    const p       = primary.params
-    const temp    = Math.round(6500 + (p.temp as number)*3500)   // Kelvin 3000–10000
-    const tint    = Math.round(-(p.tint as number)*150)           // LR tint –150…+150
-    const expo    = ((p.gamma as number)*1.5).toFixed(2)           // Exposure –5…+5
-    const con     = Math.round((p.con as number)*100)              // Contrast –100…+100
-    const shadows = Math.round((p.lift as number)*60)              // Shadows (lift = open shadows)
-    const blacks  = Math.round((p.lift as number)*400)             // Blacks (lift = raise black floor)
-    const sat     = Math.round((p.sat as number)*100)              // Saturation –100…+100
+    // reads from grade (not the primary node) so it works in Smart Match mode too,
+    // where nodes carry a matrix instead of classic slider params
+    if (!grade) { toast('Match Colors dulu', 'warn'); return }
+    const temp    = Math.round(6500 + grade.temp*3500)   // Kelvin 3000–10000
+    const tint    = Math.round(-grade.tint*150)           // LR tint –150…+150
+    const expo    = (grade.gamma*1.5).toFixed(2)           // Exposure –5…+5
+    const con     = Math.round(grade.con*100)              // Contrast –100…+100
+    const shadows = Math.round(grade.lift*60)              // Shadows (lift = open shadows)
+    const blacks  = Math.round(grade.lift*400)             // Blacks (lift = raise black floor)
+    const sat     = Math.round(grade.sat*100)              // Saturation –100…+100
     const name    = lutName||'HALEA_Preset'
     const xmp = `<?xpacket begin="" id="W5M0MpCehiHzreSzNTczkc9d"?>
 <x:xmpmeta xmlns:x="adobe:ns:meta/">
@@ -325,19 +398,24 @@ export default function StudioPage() {
       }
       sessionStorage.setItem('halea_share_before', beforeData)
       sessionStorage.setItem('halea_share_after',  afterSrc)
-      sessionStorage.setItem('halea_share_grade',  grade?.look || '')
+      sessionStorage.setItem('halea_share_grade',  grade && !grade.matched ? grade.look : '')
       window.location.href = '/share'
     } catch {
       toast('Gagal membuka Share Card', 'err')
     }
   }
 
-  const gradeStats = grade ? [
+  const gradeStats = grade ? (grade.matched ? [
+    { label:'Mode',    val:'Smart ✦' },
+    { label:'Shadows', val:grade.shadowCast||'—' },
+    { label:'Highs',   val:grade.highCast||'—' },
+    { label:'Sat',     val:'×'+(grade.satRatio??1).toFixed(2) },
+  ] : [
     { label:'Temp',  val:grade.temp>0.03?`Warm +${grade.temp.toFixed(2)}`:grade.temp<-0.03?`Cool ${grade.temp.toFixed(2)}`:'Neutral' },
     { label:'Con',   val:grade.con>0.03?`+${grade.con.toFixed(2)}`:grade.con<-0.03?grade.con.toFixed(2):'Balanced' },
     { label:'Sat',   val:grade.sat>0.03?`+${grade.sat.toFixed(2)}`:grade.sat<-0.03?grade.sat.toFixed(2):'Neutral' },
     { label:'Look',  val:grade.look },
-  ] : []
+  ]) : []
 
   // ── Shared before/after viewer ────────────────────────────────────────────
   const SplitViewer = ({ mobile=false }:{mobile?:boolean}) => (
@@ -418,6 +496,7 @@ export default function StudioPage() {
               <div className="px-3 py-2"><button onClick={handleAnalyze} disabled={analyzing} className="text-[9px] font-bold text-t3 hover:text-accent transition-colors disabled:opacity-40">↻ Re-analyze</button></div>
             </div>
           )}
+          {grade?.matched&&<StrengthSlider value={matchAmount} onChange={handleStrength}/>}
           <div>
             <div className="flex items-center gap-2 mb-3"><span className="text-[9px] font-black tracking-widest uppercase text-accent">② Footage Still</span><div className="flex-1 h-px bg-b1"/></div>
             <p className="text-[10px] text-t3 mb-2 leading-relaxed">Frame dari footage kamu untuk preview before/after.</p>
@@ -615,6 +694,9 @@ export default function StudioPage() {
             {nodes.length>0&&(
               <SkinGuardToggle/>
             )}
+
+            {/* Match Strength (Smart Match only) */}
+            {grade?.matched&&<StrengthSlider value={matchAmount} onChange={handleStrength}/>}
 
             {/* Grade result */}
             {grade&&(
