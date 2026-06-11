@@ -1,10 +1,11 @@
 'use client'
-import { useState, useRef, useEffect, useCallback } from 'react'
+import { useState, useRef, useEffect, useCallback, useMemo } from 'react'
 import Link from 'next/link'
 import { Badge, DropZone, toast } from '@/components/ui'
 import { Zap, Settings2, Film, Download } from 'lucide-react'
 import { computeSmartMatch, srgbToOklab, oklabToSrgb, parseCurve, sampleCurve } from '@/lib/colorMatch'
 import { encodeGrade, decodeGrade, copyText } from '@/lib/haleaCode'
+import { LogProfile, LOG_PROFILES, logToDisplay, convertImageData, computeAutoGain, detectLogProfile } from '@/lib/logProfiles'
 
 // ── Types ─────────────────────────────────────────────────────────────────────
 type NodeType = 'primary' | 'look' | 'halation' | 'match'
@@ -127,14 +128,16 @@ function applyNodes(r:number,g:number,b:number,nodes:GradeNode[]):[number,number
   return[r,g,b]
 }
 
-function bakeLUT(nodes:GradeNode[],size:number,skinGuard=false):Float32Array{
+function bakeLUT(nodes:GradeNode[],size:number,skinGuard=false,logProfile:LogProfile='rec709',logGain=1):Float32Array{
   const lut=new Float32Array(size**3*3);let i=0
   for(let bi=0;bi<size;bi++)for(let gi=0;gi<size;gi++)for(let ri=0;ri<size;ri++){
     const r0=ri/(size-1),g0=gi/(size-1),b0=bi/(size-1)
-    let[r,g,b]=applyNodes(r0,g0,b0,nodes)
-    if(skinGuard&&isSkinTone(r0,g0,b0)){
+    // log decode is baked in — one LUT does conversion + creative grade
+    const[br,bg,bb]=logToDisplay(logProfile,logGain,r0,g0,b0)
+    let[r,g,b]=applyNodes(br,bg,bb,nodes)
+    if(skinGuard&&isSkinTone(br,bg,bb)){
       // same 0.25 blend as the live preview, so exported LUT matches what user sees
-      r=r0+(r-r0)*0.25;g=g0+(g-g0)*0.25;b=b0+(b-b0)*0.25
+      r=br+(r-br)*0.25;g=bg+(g-bg)*0.25;b=bb+(b-bb)*0.25
     }
     lut[i++]=clamp(r);lut[i++]=clamp(g);lut[i++]=clamp(b)
   }
@@ -185,6 +188,15 @@ export default function StudioPage() {
   const [skinGuard, setSkinGuard] = useState(false)
   const [matchAmount, setMatchAmount] = useState(0.8)
   const [codeInput,  setCodeInput]  = useState('')
+  const [logProfile, setLogProfile] = useState<LogProfile>('rec709')
+  const [autoExp,    setAutoExp]    = useState(true)
+
+  // Smart exposure compensation — derived, no effect loops
+  const logGain = useMemo(
+    () => (footImg && logProfile !== 'rec709' && autoExp) ? computeAutoGain(footImg, logProfile) : 1,
+    [footImg, logProfile, autoExp]
+  )
+  const logLabel = LOG_PROFILES.find(p => p.id === logProfile)?.label || logProfile
 
   const splitRef = useRef<HTMLDivElement>(null)
   const rafRef   = useRef<number|null>(null)
@@ -202,11 +214,14 @@ export default function StudioPage() {
       const out = new Uint8ClampedArray(data.length)
       for (let i=0; i<data.length; i+=4) {
         const ro=data[i]/255, go=data[i+1]/255, bo=data[i+2]/255
-        const [nr,ng,nb]=applyNodes(ro, go, bo, nodes)
-        const blend = skinGuard && isSkinTone(ro, go, bo) ? 0.25 : 1.0
-        out[i]=Math.round(clamp(ro+(nr-ro)*blend)*255)
-        out[i+1]=Math.round(clamp(go+(ng-go)*blend)*255)
-        out[i+2]=Math.round(clamp(bo+(nb-bo)*blend)*255)
+        // log footage: decode to display first; skin guard & blends anchor to
+        // the decoded (natural) pixel, not the flat log values
+        const [br,bg,bb]=logToDisplay(logProfile, logGain, ro, go, bo)
+        const [nr,ng,nb]=applyNodes(br, bg, bb, nodes)
+        const blend = skinGuard && isSkinTone(br, bg, bb) ? 0.25 : 1.0
+        out[i]=Math.round(clamp(br+(nr-br)*blend)*255)
+        out[i+1]=Math.round(clamp(bg+(ng-bg)*blend)*255)
+        out[i+2]=Math.round(clamp(bb+(nb-bb)*blend)*255)
         out[i+3]=data[i+3]
       }
       const c=document.createElement('canvas')
@@ -214,7 +229,7 @@ export default function StudioPage() {
       c.getContext('2d')!.putImageData(new ImageData(out,width,height), 0, 0)
       setAfterSrc(c.toDataURL('image/jpeg', 0.97))
     })
-  }, [nodes, footImg, skinGuard])
+  }, [nodes, footImg, skinGuard, logProfile, logGain])
 
   const handleAnalyze = useCallback(() => {
     if (!refData) { toast('Upload reference photo dulu', 'err'); return }
@@ -222,7 +237,10 @@ export default function StudioPage() {
     setTimeout(() => {
       if (footImg) {
         // ── SMART MATCH: true color transfer footage → reference ──
-        const m = computeSmartMatch(footImg, refData)
+        // log footage is normalized to display space first, so the match
+        // operates after the decode step (same order as preview & bake)
+        const normFoot = convertImageData(footImg, logProfile, logGain)
+        const m = computeSmartMatch(normFoot, refData)
         setGrade({
           temp:m.derived.temp, tint:m.derived.tint, con:m.derived.con,
           gamma:m.derived.gamma, sat:m.derived.sat, lift:Math.max(0,m.curve[0]),
@@ -255,14 +273,14 @@ export default function StudioPage() {
       }
       setAnalyzing(false)
     }, 20)
-  }, [refData, footImg, matchAmount])
+  }, [refData, footImg, matchAmount, logProfile, logGain])
 
-  // Auto re-match when footage changes: upgrades basic → smart, and re-fits
-  // the transform when the user swaps footage (matrix is footage-specific)
+  // Auto re-match when footage or log settings change: upgrades basic → smart,
+  // and re-fits the transform (matrix is footage- and normalization-specific)
   useEffect(() => {
     if (footImg && refData && grade && !analyzing) handleAnalyze()
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [footImg])
+  }, [footImg, logProfile, logGain])
 
   const handleStrength = (v:number) => {
     setMatchAmount(v)
@@ -342,7 +360,15 @@ export default function StudioPage() {
       const scale=Math.min(1, 900/Math.max(img.width, img.height))
       c.width=Math.round(img.width*scale); c.height=Math.round(img.height*scale)
       c.getContext('2d')!.drawImage(img, 0, 0, c.width, c.height)
-      setFootImg(c.getContext('2d')!.getImageData(0, 0, c.width, c.height))
+      const imageData = c.getContext('2d')!.getImageData(0, 0, c.width, c.height)
+      setFootImg(imageData)
+      // smart log detection: pedestal + chroma + dynamic range analysis
+      const det = detectLogProfile(imageData)
+      setLogProfile(det.isLog ? det.profile : 'rec709')
+      if (det.isLog) {
+        const lbl = LOG_PROFILES.find(p=>p.id===det.profile)?.label
+        toast(`🪵 Log terdeteksi: ${lbl}${det.confidence==='medium'?' (perkiraan)':''} — ubah di Input Footage kalau salah`)
+      }
     }; img.src=url
   }
 
@@ -350,10 +376,10 @@ export default function StudioPage() {
     if (nodes.length===0) { toast('Match Colors dulu', 'warn'); return }
     setBaking(true)
     await new Promise(r=>setTimeout(r,20))
-    setLut(bakeLUT(nodes, lutSize, skinGuard))
+    setLut(bakeLUT(nodes, lutSize, skinGuard, logProfile, logGain))
     setBaking(false)
-    toast('✓ LUT baked — siap di-export')
-  }, [nodes, lutSize, skinGuard])
+    toast(logProfile!=='rec709' ? `✓ LUT baked — termasuk konversi ${logLabel}` : '✓ LUT baked — siap di-export')
+  }, [nodes, lutSize, skinGuard, logProfile, logGain, logLabel])
 
   const downloadLUT = (fmt: 'cube'|'3dl') => {
     if (!lut) { toast('Klik Bake LUT dulu', 'warn'); return }
@@ -572,10 +598,34 @@ export default function StudioPage() {
             {footSrc ? (
               <div className="relative group">
                 <img src={footSrc} alt="Footage" className="w-full h-28 object-cover rounded-xl border border-b1"/>
-                <button onClick={()=>{setFootImg(null);setFootSrc(null);setAfterSrc(null)}}
+                <button onClick={()=>{setFootImg(null);setFootSrc(null);setAfterSrc(null);setLogProfile('rec709')}}
                   className="absolute top-2 right-2 w-6 h-6 bg-black/70 rounded-full text-white text-[10px] flex items-center justify-center opacity-0 group-hover:opacity-100 transition-opacity hover:bg-red-500">✕</button>
               </div>
             ) : <DropZone label="Drop footage still" sub="JPG · PNG · WEBP" icon="🎬" accept="image/*" onFile={handleFootage}/>}
+            {/* Log input profile */}
+            {footSrc&&(
+              <div className="mt-3">
+                <label className="text-[9px] font-black tracking-widest uppercase text-t3 block mb-1.5">Input Footage</label>
+                <select value={logProfile} onChange={e=>setLogProfile(e.target.value as LogProfile)}
+                  className="w-full bg-s2 border border-b1 text-txt px-2.5 py-2 rounded-lg text-[11px] outline-none focus:border-accent transition-colors">
+                  {LOG_PROFILES.map(p=>(
+                    <option key={p.id} value={p.id}>{p.label}{p.id!=='rec709'?` — ${p.cams}`:''}</option>
+                  ))}
+                </select>
+                {logProfile!=='rec709'&&(
+                  <div className="flex items-center justify-between mt-2">
+                    <button onClick={()=>setAutoExp(v=>!v)}
+                      className={`flex items-center gap-2 px-2.5 py-1.5 rounded-lg border text-[10px] font-bold transition-all ${autoExp?'bg-warn/10 border-warn/30 text-warn':'bg-s3 border-b2 text-t3 hover:border-b3'}`}>
+                      <div className={`w-5 h-3 rounded-full relative transition-colors ${autoExp?'bg-warn':'bg-b2'}`}>
+                        <div className={`absolute top-0.5 w-2 h-2 rounded-full bg-white transition-all ${autoExp?'left-2.5':'left-0.5'}`}/>
+                      </div>
+                      ⚡ Auto Exposure{autoExp?` ${Math.log2(logGain)>=0?'+':''}${Math.log2(logGain).toFixed(1)} EV`:''}
+                    </button>
+                    <span className="text-[9px] text-warn font-bold">🪵 Log</span>
+                  </div>
+                )}
+              </div>
+            )}
           </div>
           {/* Skin Tone Guard */}
           {nodes.length>0&&(
@@ -600,6 +650,7 @@ export default function StudioPage() {
           <span className="text-[9px] font-black tracking-widest uppercase text-t3">Preview</span>
           {afterSrc&&<span className="flex items-center gap-1.5 text-[9px] font-black uppercase text-ok"><span className="w-1.5 h-1.5 rounded-full bg-ok animate-pulse inline-block"/>LIVE</span>}
           {skinGuard&&afterSrc&&<span className="text-[9px] text-ok font-bold">🎭 Skin Guard ON</span>}
+          {logProfile!=='rec709'&&footImg&&<span className="text-[9px] text-warn font-bold">🪵 {logLabel}</span>}
           {lut&&<Badge color="accent">LUT Ready</Badge>}
           <span className="ml-auto text-[9px] text-t3 font-mono hidden sm:block">{afterSrc?'Geser ⇔ untuk compare':footImg?'Match Colors untuk preview':'Drop footage still di kiri'}</span>
         </div>
@@ -665,7 +716,7 @@ export default function StudioPage() {
             </div>
           ) : lut ? (
             <div className="bg-s2 border border-b1 rounded-xl overflow-hidden">
-              {[['Size',lutSize+'³'],['Nodes',nodes.filter(n=>n.enabled).length+' active'],['Look',grade?.look||'—']].map(([k,v])=>(
+              {[['Size',lutSize+'³'],['Nodes',nodes.filter(n=>n.enabled).length+' active'],['Look',grade?.look||'—'],...(logProfile!=='rec709'?[['Input',logLabel]]:[])].map(([k,v])=>(
                 <div key={k} className="flex justify-between px-3 py-1.5 border-b border-b1 last:border-0 text-xs">
                   <span className="text-t2">{k}</span><span className="text-accent font-mono font-bold capitalize">{v}</span>
                 </div>
@@ -833,7 +884,7 @@ export default function StudioPage() {
                 {footSrc ? (
                   <div className="relative">
                     <img src={footSrc} alt="Footage" className="w-full h-44 object-cover rounded-xl border border-b1"/>
-                    <button onClick={()=>{setFootImg(null);setFootSrc(null);setAfterSrc(null)}}
+                    <button onClick={()=>{setFootImg(null);setFootSrc(null);setAfterSrc(null);setLogProfile('rec709')}}
                       className="absolute top-2.5 right-2.5 w-9 h-9 bg-black/70 rounded-full text-white flex items-center justify-center text-sm hover:bg-red-500 transition-colors">✕</button>
                     {afterSrc&&(
                       <button onClick={()=>setMobileTab('preview')}
@@ -848,6 +899,27 @@ export default function StudioPage() {
                     <span className="text-4xl opacity-30">🎬</span>
                     <div className="text-center"><p className="text-sm font-bold">Tap untuk upload</p><p className="text-[10px] text-t3 mt-1">Frame dari footage kamu</p></div>
                   </label>
+                )}
+                {/* Log input profile */}
+                {footSrc&&(
+                  <div className="mt-3">
+                    <label className="text-[9px] font-black tracking-widest uppercase text-t3 block mb-1.5">Input Footage</label>
+                    <select value={logProfile} onChange={e=>setLogProfile(e.target.value as LogProfile)}
+                      className="w-full bg-s3 border border-b2 text-txt px-3 py-2.5 rounded-xl text-xs outline-none focus:border-accent transition-colors">
+                      {LOG_PROFILES.map(p=>(
+                        <option key={p.id} value={p.id}>{p.label}{p.id!=='rec709'?` — ${p.cams}`:''}</option>
+                      ))}
+                    </select>
+                    {logProfile!=='rec709'&&(
+                      <button onClick={()=>setAutoExp(v=>!v)}
+                        className={`mt-2 flex items-center gap-2 px-3 py-2 rounded-xl border text-[10px] font-bold transition-all ${autoExp?'bg-warn/10 border-warn/30 text-warn':'bg-s3 border-b2 text-t3'}`}>
+                        <div className={`w-5 h-3 rounded-full relative transition-colors ${autoExp?'bg-warn':'bg-b2'}`}>
+                          <div className={`absolute top-0.5 w-2 h-2 rounded-full bg-white transition-all ${autoExp?'left-2.5':'left-0.5'}`}/>
+                        </div>
+                        ⚡ Auto Exposure{autoExp?` ${Math.log2(logGain)>=0?'+':''}${Math.log2(logGain).toFixed(1)} EV`:' OFF'}
+                      </button>
+                    )}
+                  </div>
                 )}
               </div>
             </div>
@@ -893,6 +965,7 @@ export default function StudioPage() {
             <>
               <SplitViewer mobile/>
               <div className="absolute top-4 right-4 z-30 flex gap-2">
+                {logProfile!=='rec709'&&<div className="bg-warn/20 backdrop-blur-sm rounded-xl px-2.5 py-1.5 border border-warn/30"><span className="text-[9px] font-black uppercase text-warn">🪵 {logLabel}</span></div>}
                 {skinGuard&&<div className="bg-ok/20 backdrop-blur-sm rounded-xl px-2.5 py-1.5 border border-ok/30"><span className="text-[9px] font-black uppercase text-ok">🎭 Skin Guard</span></div>}
                 <div className="bg-black/60 backdrop-blur-sm rounded-xl px-3 py-1.5 border border-white/10">
                   <span className="text-[9px] font-black uppercase text-ok flex items-center gap-1.5"><span className="w-1.5 h-1.5 rounded-full bg-ok animate-pulse"/>LIVE</span>
@@ -981,7 +1054,7 @@ export default function StudioPage() {
 
             {lut&&(
               <div className="bg-s2 border border-b1 rounded-2xl overflow-hidden">
-                {[['LUT Size',lutSize+'³ points'],['Active Nodes',nodes.filter(n=>n.enabled).length+' nodes'],['Look Preset',grade?.look||'natural']].map(([k,v])=>(
+                {[['LUT Size',lutSize+'³ points'],['Active Nodes',nodes.filter(n=>n.enabled).length+' nodes'],['Look Preset',grade?.look||'natural'],...(logProfile!=='rec709'?[['Input',logLabel]]:[])].map(([k,v])=>(
                   <div key={k} className="flex justify-between px-4 py-3 border-b border-b1 last:border-0">
                     <span className="text-xs text-t2">{k}</span>
                     <span className="text-xs text-accent font-mono font-bold capitalize">{v}</span>
