@@ -1,7 +1,9 @@
 'use client'
 import { useEffect, useState } from 'react'
+import { useRouter } from 'next/navigation'
 import { useShopStore, Product } from '@/store/shop'
 import { useAuthStore } from '@/store/auth'
+import { useSettingsStore, rp } from '@/store/settings'
 import { Badge, Btn, Card, toast } from '@/components/ui'
 import Link from 'next/link'
 
@@ -11,6 +13,8 @@ const FILTERS = ['Semua', 'LUT', 'Preset', 'Pack', 'AI Credits', 'Gratis']
 export default function ShopPage() {
   const { products, seedDemo } = useShopStore()
   const { user, credits, redeemCode } = useAuthStore()
+  const { packages, creditPrice } = useSettingsStore()
+  const router = useRouter()
   const [filter, setFilter] = useState('Semua')
   const [selected, setSelected] = useState<Product | null>(null)
 
@@ -24,6 +28,11 @@ export default function ShopPage() {
   })
 
   const handleRedeem = () => {
+    if (!user) {
+      toast('Masuk dulu untuk redeem kode', 'warn')
+      router.push('/login?next=/shop')
+      return
+    }
     const code = prompt('Masukkan kode AI Credits:')
     if (!code) return
     if (redeemCode(code)) toast('✓ Credits ditambahkan!')
@@ -60,10 +69,46 @@ export default function ShopPage() {
             </button>
           )}
           {!user && (
-            <Link href="/login" className="text-t3 text-xs hover:text-accent transition-colors">Masuk sebagai admin →</Link>
+            <Link href="/login?next=/shop" className="text-t3 text-xs hover:text-accent transition-colors">Masuk / Daftar →</Link>
           )}
         </div>
       </div>
+
+      {/* ── Paket AI Credits (dari pengaturan admin) ── */}
+      <section className="mb-14">
+        <div className="text-center mb-6">
+          <h2 className="font-bold text-2xl mb-1">🤖 Paket AI Credits</h2>
+          <p className="text-t3 text-xs">Untuk Bake LUT, Shot Matcher, dan HALEA AI · harga satuan {rp(creditPrice)}/kredit</p>
+        </div>
+        <div className="grid grid-cols-1 sm:grid-cols-3 gap-4 max-w-4xl mx-auto">
+          {packages.map(p => {
+            const perCredit = Math.round(p.price / p.credits)
+            const disc = Math.max(0, Math.round((1 - perCredit / creditPrice) * 100))
+            return (
+              <div key={p.id}
+                className={`relative bg-s2 border rounded-2xl p-6 text-center flex flex-col transition-all hover:-translate-y-1 ${p.tag ? 'border-accent/40 shadow-xl shadow-accent/10' : 'border-b1'}`}>
+                {p.tag && (
+                  <span className="absolute -top-2.5 left-1/2 -translate-x-1/2 text-[9px] font-black tracking-widest px-3 py-1 rounded-full bg-accent text-white">
+                    {p.tag}
+                  </span>
+                )}
+                <p className="font-bold text-sm text-t2 mb-2">{p.name}</p>
+                <p className="font-mono text-4xl font-bold text-ok mb-1">{p.credits}</p>
+                <p className="text-[10px] text-t3 uppercase tracking-widest font-bold mb-4">kredit AI</p>
+                <p className="font-bold text-xl mb-1">{rp(p.price)}</p>
+                <p className="text-[10px] text-t3 mb-5">{rp(perCredit)}/kredit{disc > 0 ? ` · hemat ${disc}%` : ''}</p>
+                <a href="https://instagram.com/robbiesatriaa" target="_blank"
+                  className={`mt-auto block px-4 py-3 rounded-xl text-xs font-bold transition-colors ${p.tag ? 'bg-accent text-white hover:bg-orange-400' : 'bg-s4 border border-b2 text-txt hover:border-b3'}`}>
+                  Beli via DM →
+                </a>
+              </div>
+            )
+          })}
+        </div>
+        <p className="text-center text-[11px] text-t3 mt-5">
+          Bayar via DM → terima kode → <button onClick={handleRedeem} className="text-ok font-bold hover:underline">redeem di sini</button> → kredit langsung masuk akunmu
+        </p>
+      </section>
 
       {/* Filters */}
       <div className="flex gap-2 flex-wrap mb-8">

@@ -73,10 +73,10 @@ export function Navbar() {
             <div className="flex items-center gap-2">
               {!isAdmin && (
                 <Link href="/shop" className="flex items-center gap-1.5 px-2.5 py-1 rounded-full bg-ok/10 border border-ok/20 text-ok text-xs font-bold">
-                  {credits} AI credits
+                  🤖 {credits} kredit
                 </Link>
               )}
-              <Link href={isAdmin ? '/admin' : '/login'}
+              <Link href={isAdmin ? '/admin' : '/profile'}
                 className="flex items-center gap-2 px-3 py-1.5 rounded-full bg-s3 border border-b1 text-xs font-bold hover:border-b3 transition-colors">
                 <div className={clsx('w-5 h-5 rounded-full flex items-center justify-center text-[10px] font-black', isAdmin ? 'bg-a2 text-black' : 'bg-accent text-white')}>
                   {user.name[0]}
@@ -87,7 +87,7 @@ export function Navbar() {
           ) : (
             <Link href="/login"
               className="px-3 py-1.5 rounded-md bg-accent text-white text-xs font-bold tracking-wide hover:bg-orange-400 transition-colors">
-              Sign In
+              Masuk
             </Link>
           )}
         </div>
@@ -110,6 +110,18 @@ export function Navbar() {
             </Link>
           ))}
           {isAdmin && <Link href="/admin" onClick={() => setOpen(false)} className="px-3 py-2.5 text-sm font-bold text-a2">Admin</Link>}
+          {user && !isAdmin ? (
+            <Link href="/profile" onClick={() => setOpen(false)}
+              className="px-3 py-2.5 rounded-md text-sm font-bold tracking-wide uppercase text-t2 flex items-center gap-2">
+              <span className="w-5 h-5 rounded-full bg-accent text-white flex items-center justify-center text-[10px] font-black">{user.name[0]}</span>
+              Profil · 🤖 {credits}
+            </Link>
+          ) : !user && (
+            <Link href="/login" onClick={() => setOpen(false)}
+              className="px-3 py-2.5 rounded-md text-sm font-bold tracking-wide uppercase text-accent">
+              Masuk / Daftar
+            </Link>
+          )}
         </div>
       )}
     </header>

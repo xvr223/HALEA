@@ -1,21 +1,23 @@
 'use client'
 import { useState, useEffect, useCallback, useRef } from 'react'
 import Link from 'next/link'
+import { useRouter } from 'next/navigation'
+import { useAuthStore } from '@/store/auth'
 import { toast } from '@/components/ui'
 import { CHAPTERS, RANKS, LESSON_XP, MISSION_XP, Lesson } from './curriculum'
 
-// ── Progress store (localStorage) ─────────────────────────────────────────────
+// ── Progress store (localStorage, per akun) ───────────────────────────────────
 interface Progress { done: string[]; xp: number; missions: string[] }
 const EMPTY: Progress = { done: [], xp: 0, missions: [] }
 
-function loadProgress(): Progress {
+function loadProgress(key: string): Progress {
   try {
-    const p = JSON.parse(localStorage.getItem('halea_learn') || '')
+    const p = JSON.parse(localStorage.getItem(key) || '')
     return { done: p.done || [], xp: p.xp || 0, missions: p.missions || [] }
   } catch { return { ...EMPTY } }
 }
-function saveProgress(p: Progress) {
-  try { localStorage.setItem('halea_learn', JSON.stringify(p)) } catch {}
+function saveProgress(key: string, p: Progress) {
+  try { localStorage.setItem(key, JSON.stringify(p)) } catch {}
 }
 // Scan mission flags set by Studio/Matcher → auto-claim XP
 function claimMissions(p: Progress): { next: Progress; gained: number } {
@@ -154,6 +156,10 @@ export default function LearnPage() {
   const [activeLesson, setActiveLesson] = useState<Lesson | null>(null)
   const [activeTool, setActiveTool] = useState<string | null>(null)
 
+  const router = useRouter()
+  const { user: authUser } = useAuthStore()
+  const storeKey = authUser ? `halea_learn_${authUser.id}` : 'halea_learn_guest'
+
   const doneSet = new Set(progress.done)
   const totalLessons = CHAPTERS.reduce((s, c) => s + c.lessons.length, 0)
   const rank = rankFor(progress.xp)
@@ -165,22 +171,34 @@ export default function LearnPage() {
   useEffect(() => { progressRef.current = progress }, [progress])
 
   const refresh = useCallback((announce: boolean) => {
-    const base = progressRef.current === EMPTY ? loadProgress() : progressRef.current
+    const base = progressRef.current === EMPTY ? loadProgress(storeKey) : progressRef.current
     const { next, gained } = claimMissions(base)
     if (next !== progressRef.current) {
-      saveProgress(next)
+      saveProgress(storeKey, next)
       progressRef.current = next
       setProgress(next)
     }
     if (gained && announce) toast(`🎯 Misi selesai! +${gained} XP`)
-  }, [])
+  }, [storeKey])
 
   useEffect(() => {
+    // reset & reload saat ganti akun (progress per user)
+    progressRef.current = EMPTY
+    setProgress(EMPTY)
     refresh(true)
     const onFocus = () => refresh(true)
     window.addEventListener('focus', onFocus)
     return () => window.removeEventListener('focus', onFocus)
   }, [refresh])
+
+  const openLesson = (l: Lesson) => {
+    if (!authUser) {
+      toast('Daftar gratis dulu untuk mulai belajar ✦', 'warn')
+      router.push('/login?next=/learn')
+      return
+    }
+    setActiveLesson(l)
+  }
 
   const isUnlocked = (ci: number) => {
     if (ci === 0) return true
@@ -194,7 +212,7 @@ export default function LearnPage() {
     if (!prev.done.includes(lesson.id)) {
       const before = rankFor(prev.xp)
       const next = { ...prev, done: [...prev.done, lesson.id], xp: prev.xp + LESSON_XP }
-      saveProgress(next)
+      saveProgress(storeKey, next)
       progressRef.current = next
       setProgress(next)
       toast(`✓ +${LESSON_XP} XP — ${lesson.title}`)
@@ -221,6 +239,18 @@ export default function LearnPage() {
         <p className="text-t2 text-sm mb-6 max-w-xl leading-relaxed">
           6 bab berjenjang dari nol sampai jadi creator. Selesaikan pelajaran, lulus kuis, kerjakan misi — kumpulkan XP.
         </p>
+
+        {!authUser && (
+          <div className="bg-accent/10 border border-accent/25 rounded-2xl px-5 py-4 mb-5 flex flex-col sm:flex-row sm:items-center gap-3">
+            <p className="text-sm text-t2 flex-1">
+              <strong className="text-txt">Daftar gratis</strong> untuk mulai belajar — progres & XP tersimpan di akunmu, plus bonus kredit AI 🎁
+            </p>
+            <Link href="/login?next=/learn"
+              className="px-5 py-2.5 bg-accent text-white rounded-xl text-xs font-black text-center hover:bg-orange-400 transition-colors flex-shrink-0">
+              Daftar Sekarang →
+            </Link>
+          </div>
+        )}
 
         <div className="bg-s2 border border-b1 rounded-2xl p-5 flex flex-col sm:flex-row sm:items-center gap-5">
           <div className="flex items-center gap-4 flex-1 min-w-0">
@@ -288,7 +318,7 @@ export default function LearnPage() {
                     const done = doneSet.has(l.id)
                     const missionDone = !!l.mission && progress.missions.includes(l.mission.flag)
                     return (
-                      <button key={l.id} onClick={() => setActiveLesson(l)}
+                      <button key={l.id} onClick={() => openLesson(l)}
                         className={`flex items-center gap-4 border rounded-xl p-4 text-left transition-all hover:-translate-y-0.5 ${done ? 'bg-ok/5 border-ok/25' : 'bg-s2 border-b1 hover:border-b3'}`}>
                         <div className={`w-9 h-9 rounded-full flex items-center justify-center text-sm font-black flex-shrink-0 ${done ? 'bg-ok/20 text-ok' : 'bg-s4 text-t2'}`}>
                           {done ? '✓' : li + 1}

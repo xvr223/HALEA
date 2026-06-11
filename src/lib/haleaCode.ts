@@ -1,17 +1,16 @@
 // HALEA Code — share a grade as a short text code. No server, no database:
 // the code IS the look.
 //
-// v2 layout (compact): [ver=2][flags][name? len+ascii≤12]
-//   [match? 9×i16 matrix + 3×i16 offset + 16×u8 curve + u8 amount = 41B]
-//   [primary? 6×i8 = 6B, omitted when all-zero]
-//   [look? 2B][halation? 1B][checksum]
-// Typical sizes: basic look ~22 chars, full Smart Match ~66–80 chars.
+// v3 layout: [ver=3][flags][name? len+ascii≤12]
+//   [match? 9×i16 matrix + 3×i16 offset + 16×u8 curve
+//          + 24×i8 hue-band residuals + 5×i8 skin layer + u8 amount = 70B]
+//   [primary? 6×i8, omitted when all-zero][look? 2B][halation? 1B][checksum]
+// Typical sizes: basic look ~22 chars, full Smart Match ~105 chars.
 //
 // Compression tricks (lossless where it matters):
 // - means folded into one offset vector: T(x−μf)+μr ≡ Tx+o with o = μr − T·μf
-// - tone curve 64→16 knots on encode, smoothstep-upsampled back to 64 on decode
-//   (in-session curves stay full 64-knot; only transport is compressed)
-// v1 codes (longer, older) still decode — version byte is checked.
+// - tone curve 64→16 knots on encode, Catmull-Rom upsampled back on decode
+// v1 & v2 codes (older) still decode — version byte is checked.
 
 export interface CodeNode {
   type: 'match' | 'primary' | 'look' | 'halation'
@@ -47,7 +46,7 @@ export function encodeGrade(nodes: CodeNode[], name = ''): string {
   if (look)      flags |= 4
   if (hal)       flags |= 8
   if (cleanName) flags |= 16
-  u8(2); u8(flags)
+  u8(3); u8(flags)
 
   if (cleanName) {
     u8(cleanName.length)
@@ -55,13 +54,14 @@ export function encodeGrade(nodes: CodeNode[], name = ''): string {
   }
   if (match) {
     const p = match.params as Record<string, number | string>
-    const m = (i: number) => p['m' + i] as number
+    const num = (k: string, d: number) => typeof p[k] === 'number' ? p[k] as number : d
+    const m = (i: number) => num('m' + i, i % 4 === 0 ? 1 : 0)
     for (let i = 0; i < 9; i++) i16(m(i) * 8192)
     // fold means into offset: o = μr − T·μf  (exact algebra, 3 values instead of 6)
-    const fL = p.fL as number, fa = p.fa as number, fb = p.fb as number
-    i16(((p.rL as number) - (m(0) * fL + m(1) * fa + m(2) * fb)) * 8192)
-    i16(((p.ra as number) - (m(3) * fL + m(4) * fa + m(5) * fb)) * 8192)
-    i16(((p.rb as number) - (m(6) * fL + m(7) * fa + m(8) * fb)) * 8192)
+    const fL = num('fL', 0), fa = num('fa', 0), fb = num('fb', 0)
+    i16((num('rL', 0) - (m(0) * fL + m(1) * fa + m(2) * fb)) * 8192)
+    i16((num('ra', 0) - (m(3) * fL + m(4) * fa + m(5) * fb)) * 8192)
+    i16((num('rb', 0) - (m(6) * fL + m(7) * fa + m(8) * fb)) * 8192)
     // resample tone curve 64 → 16 knots
     const curve = String(p.curve).split(',').map(Number)
     for (let j = 0; j < 16; j++) {
@@ -70,6 +70,15 @@ export function encodeGrade(nodes: CodeNode[], name = ''): string {
       const v = curve[i] + (curve[i + 1] - curve[i]) * (t - i)
       u8(Math.round(cl(v, 0, 1) * 255))
     }
+    // v3: hue-band residuals (8 × hue/sat/luma) + skin layer
+    for (let i = 0; i < 8; i++) u8(Math.round(cl(num('bh' + i, 0), -0.508, 0.508) * 250))
+    for (let i = 0; i < 8; i++) u8(Math.round(cl(num('bs' + i, 1) - 1, -0.84, 0.84) * 150))
+    for (let i = 0; i < 8; i++) u8(Math.round(cl(num('bl' + i, 0), -0.317, 0.317) * 400))
+    u8(Math.round(cl(num('skh', 0), -0.508, 0.508) * 250))
+    u8(Math.round(cl(num('sks', 1) - 1, -0.84, 0.84) * 150))
+    u8(Math.round(cl(num('skl', 0), -0.317, 0.317) * 400))
+    u8(Math.round(cl(num('skw', 0), 0, 1) * 100))
+    u8(Math.round(cl(num('skp', 0), 0, 1) * 100))
     u8(Math.round(cl(p.amount as number, 0, 1) * 100))
   }
   if (primDirty && prim) {
@@ -114,7 +123,7 @@ export function decodeGrade(text: string): { nodes: CodeNode[]; name: string } |
     const i8  = () => { let v = u8(); if (v > 127) v -= 256; return v }
 
     const ver = u8()
-    if (ver !== 1 && ver !== 2) return null
+    if (ver < 1 || ver > 3) return null
     const flags = u8()
 
     let name = ''
@@ -153,6 +162,17 @@ export function decodeGrade(text: string): { nodes: CodeNode[]; name: string } |
           curve.push(v.toFixed(5))
         }
         params.curve = curve.join(',')
+      }
+      if (ver >= 3) {
+        // hue-band residuals + skin layer
+        for (let i = 0; i < 8; i++) params['bh' + i] = i8() / 250
+        for (let i = 0; i < 8; i++) params['bs' + i] = 1 + i8() / 150
+        for (let i = 0; i < 8; i++) params['bl' + i] = i8() / 400
+        params.skh = i8() / 250
+        params.sks = 1 + i8() / 150
+        params.skl = i8() / 400
+        params.skw = u8() / 100
+        params.skp = u8() / 100
       }
       params.amount = u8() / 100
       nodes.push({ type: 'match', enabled: true, params })

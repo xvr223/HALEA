@@ -1,9 +1,12 @@
 'use client'
 import { useState, useRef, useEffect, useCallback, useMemo } from 'react'
 import Link from 'next/link'
+import { useRouter } from 'next/navigation'
+import { useAuthStore } from '@/store/auth'
+import { useSettingsStore } from '@/store/settings'
 import { Badge, DropZone, toast } from '@/components/ui'
 import { Zap, Settings2, Film, Download } from 'lucide-react'
-import { computeSmartMatch, srgbToOklab, oklabToSrgb, parseCurve, sampleCurve } from '@/lib/colorMatch'
+import { computeSmartMatch, transformFromParams, applyTransform } from '@/lib/colorMatch'
 import { encodeGrade, decodeGrade, copyText } from '@/lib/haleaCode'
 import { LogProfile, LOG_PROFILES, logToDisplay, convertImageData, computeAutoGain, detectLogProfile } from '@/lib/logProfiles'
 
@@ -87,17 +90,11 @@ function applyNodes(r:number,g:number,b:number,nodes:GradeNode[]):[number,number
     if(!node.enabled)continue
     const p=node.params
     if(node.type==='match'){
-      // Smart Match: Oklab MKL transfer + CDF tone curve, blended by amount
+      // Smart Match v3: global MKL + tone curve + hue-band layer + skin layer
+      // + perceptual guards — all inside applyTransform (shared with Matcher)
       const amount=p.amount as number
       if(amount>0.001){
-        const [oL,oA,oB]=srgbToOklab(r,g,b)
-        const dL=oL-(p.fL as number), dA=oA-(p.fa as number), dB=oB-(p.fb as number)
-        let nL=(p.m0 as number)*dL+(p.m1 as number)*dA+(p.m2 as number)*dB+(p.rL as number)
-        const nA=(p.m3 as number)*dL+(p.m4 as number)*dA+(p.m5 as number)*dB+(p.ra as number)
-        const nB=(p.m6 as number)*dL+(p.m7 as number)*dA+(p.m8 as number)*dB+(p.rb as number)
-        nL=sampleCurve(parseCurve(p.curve as string),nL)
-        const [mr,mg,mb]=oklabToSrgb(nL,nA,nB)
-        r=clamp(r+(mr-r)*amount);g=clamp(g+(mg-g)*amount);b=clamp(b+(mb-b)*amount)
+        ;[r,g,b]=applyTransform(r,g,b,transformFromParams(p),amount)
       }
     }
     if(node.type==='primary'){
@@ -246,6 +243,11 @@ export default function StudioPage() {
   const [trimOpen,       setTrimOpen]       = useState(true)
   const [mobileTrimOpen, setMobileTrimOpen] = useState(false)
 
+  const router = useRouter()
+  const { user: authUser, credits, useCredit } = useAuthStore()
+  const matchCost = useSettingsStore(s => s.matchCost)
+  const isAdmin = authUser?.role === 'admin'
+
   const splitRef = useRef<HTMLDivElement>(null)
   const rafRef   = useRef<number|null>(null)
   const nodesRef = useRef<GradeNode[]>([])
@@ -294,6 +296,11 @@ export default function StudioPage() {
   }, [nodes, footImg, skinGuard, logProfile, logGain])
 
   const handleAnalyze = useCallback(() => {
+    if (!authUser) {
+      toast('Daftar gratis dulu untuk pakai Color Match ✦', 'warn')
+      router.push('/login?next=/studio')
+      return
+    }
     if (!refData) { toast('Upload reference photo dulu', 'err'); return }
     setAnalyzing(true); setLut(null)
     setTimeout(() => {
@@ -322,6 +329,14 @@ export default function StudioPage() {
               fL:m.muF[0], fa:m.muF[1], fb:m.muF[2],
               rL:m.muR[0], ra:m.muR[1], rb:m.muR[2],
               curve:Array.from(m.curve).map(v=>v.toFixed(5)).join(','),
+              // v3: hue-band residuals + skin layer
+              bh0:m.bandH[0], bh1:m.bandH[1], bh2:m.bandH[2], bh3:m.bandH[3],
+              bh4:m.bandH[4], bh5:m.bandH[5], bh6:m.bandH[6], bh7:m.bandH[7],
+              bs0:m.bandS[0], bs1:m.bandS[1], bs2:m.bandS[2], bs3:m.bandS[3],
+              bs4:m.bandS[4], bs5:m.bandS[5], bs6:m.bandS[6], bs7:m.bandS[7],
+              bl0:m.bandL[0], bl1:m.bandL[1], bl2:m.bandL[2], bl3:m.bandL[3],
+              bl4:m.bandL[4], bl5:m.bandL[5], bl6:m.bandL[6], bl7:m.bandL[7],
+              skh:m.skinH, sks:m.skinS, skl:m.skinL, skw:m.skinW, skp:m.skinP,
               amount:matchAmount } },
           { id:mkId(), type:'primary', enabled:true, params:{ ...ZERO_TRIM, ...(prevTrim||{}) } },
           { id:mkId(), type:'halation', enabled:m.halation>0.05, params:{ threshold:0.65, intensity:m.halation } },
@@ -342,7 +357,7 @@ export default function StudioPage() {
       }
       setAnalyzing(false)
     }, 20)
-  }, [refData, footImg, matchAmount, logProfile, logGain])
+  }, [refData, footImg, matchAmount, logProfile, logGain, authUser, router])
 
   // Auto re-match when footage or log settings change: upgrades basic → smart,
   // and re-fits the transform (matrix is footage- and normalization-specific)
@@ -451,13 +466,17 @@ export default function StudioPage() {
 
   const handleBake = useCallback(async () => {
     if (nodes.length===0) { toast('Match Colors dulu', 'warn'); return }
+    if (!useCredit(matchCost)) {
+      toast(`Kredit habis — Bake butuh ${matchCost} kredit. Beli di Shop 🛍`, 'err')
+      return
+    }
     setBaking(true)
     await new Promise(r=>setTimeout(r,20))
     setLut(bakeLUT(nodes, lutSize, skinGuard, logProfile, logGain))
     setBaking(false)
     try { localStorage.setItem('halea_m_bake', '1') } catch {}   // HALEA Academy mission
     toast(logProfile!=='rec709' ? `✓ LUT baked — termasuk konversi ${logLabel}` : '✓ LUT baked — siap di-export')
-  }, [nodes, lutSize, skinGuard, logProfile, logGain, logLabel])
+  }, [nodes, lutSize, skinGuard, logProfile, logGain, logLabel, useCredit, matchCost])
 
   const downloadLUT = (fmt: 'cube'|'3dl') => {
     if (!lut) { toast('Klik Bake LUT dulu', 'warn'); return }
@@ -751,6 +770,15 @@ export default function StudioPage() {
           {logProfile!=='rec709'&&footImg&&<span className="text-[9px] text-warn font-bold">🪵 {logLabel}</span>}
           {lut&&<Badge color="accent">LUT Ready</Badge>}
           <span className="ml-auto text-[9px] text-t3 font-mono hidden sm:block">{afterSrc?'Geser ⇔ untuk compare':footImg?'Match Colors untuk preview':'Drop footage still di kiri'}</span>
+          {authUser ? (!isAdmin && (
+            <Link href="/shop" className="text-[9px] font-bold text-ok bg-ok/10 border border-ok/20 px-2.5 py-1 rounded-full flex-shrink-0 hover:bg-ok/20 transition-colors">
+              🤖 {credits} kredit
+            </Link>
+          )) : (
+            <Link href="/login?next=/studio" className="text-[9px] font-bold text-accent bg-accent/10 border border-accent/20 px-2.5 py-1 rounded-full flex-shrink-0 hover:bg-accent/20 transition-colors">
+              Masuk →
+            </Link>
+          )}
         </div>
         <div className="flex-1 overflow-hidden relative bg-[#0a0a0a] flex items-center justify-center">
           {!footImg ? (
@@ -872,7 +900,18 @@ export default function StudioPage() {
             <div className="text-center pt-2">
               <p className="text-[9px] font-black tracking-widest uppercase text-accent mb-2">Color Match Studio</p>
               <h1 className="font-fraunces text-3xl font-semibold">Match Any <span className="italic text-accent">Look</span></h1>
-              <p className="text-[11px] text-t3 mt-2">Analisis warna referensi. Instant. Gratis.</p>
+              <p className="text-[11px] text-t3 mt-2">Preview gratis · Bake LUT {matchCost} kredit</p>
+              <div className="flex justify-center mt-2.5">
+                {authUser ? (!isAdmin && (
+                  <Link href="/shop" className="text-[10px] font-bold text-ok bg-ok/10 border border-ok/20 px-3 py-1.5 rounded-full">
+                    🤖 {credits} kredit · Top up →
+                  </Link>
+                )) : (
+                  <Link href="/login?next=/studio" className="text-[10px] font-bold text-white bg-accent px-4 py-1.5 rounded-full shadow-lg shadow-accent/30">
+                    Daftar gratis → dapat bonus kredit
+                  </Link>
+                )}
+              </div>
             </div>
 
             <div className="flex items-center justify-center gap-1">

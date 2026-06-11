@@ -1,6 +1,9 @@
 'use client'
 import { useState, useRef, useEffect, useCallback } from 'react'
 import Link from 'next/link'
+import { useRouter } from 'next/navigation'
+import { useAuthStore } from '@/store/auth'
+import { useSettingsStore } from '@/store/settings'
 import { ArrowLeft, Download, Plus, Zap, Camera } from 'lucide-react'
 import { toast } from '@/components/ui'
 import { computeSmartMatch, applyMatch, bakeMatchLUT, SmartMatchResult } from '@/lib/colorMatch'
@@ -178,6 +181,18 @@ export default function MatcherPage() {
   const [shots, setShots] = useState<Shot[]>([])
   const [strength, setStrength] = useState(0.8)
 
+  const router = useRouter()
+  const { user: authUser, credits, useCredit } = useAuthStore()
+  const matchCost = useSettingsStore(s => s.matchCost)
+  const isAdmin = authUser?.role === 'admin'
+
+  const requireLogin = () => {
+    if (authUser) return true
+    toast('Daftar gratis dulu untuk pakai Shot Matcher ✦', 'warn')
+    router.push('/login?next=/matcher')
+    return false
+  }
+
   const refDataRef  = useRef<ImageData | null>(null)
   const shotsRef    = useRef<Shot[]>([])
   const strengthRef = useRef(0.8)
@@ -202,6 +217,7 @@ export default function MatcherPage() {
   }, [])
 
   const handleRef = async (f: File) => {
+    if (!requireLogin()) return
     try {
       const { src, imgData } = await loadToImageData(f, 500)
       refDataRef.current = imgData
@@ -220,6 +236,7 @@ export default function MatcherPage() {
   }
 
   const handleShotFiles = async (files: FileList) => {
+    if (!requireLogin()) return
     const room = MAX_SHOTS - shotsRef.current.length
     const list = Array.from(files).slice(0, room)
     if (files.length > room) toast(`Maksimal ${MAX_SHOTS} shot — ${files.length - room} file dilewati`, 'warn')
@@ -247,6 +264,10 @@ export default function MatcherPage() {
 
   const downloadShot = (shot: Shot) => {
     if (!shot.match) return
+    if (!useCredit(matchCost)) {
+      toast(`Kredit habis — LUT butuh ${matchCost} kredit. Beli di Shop 🛍`, 'err')
+      return
+    }
     const lut = bakeMatchLUT(shot.match, strengthRef.current, 33)
     const a = document.createElement('a')
     a.href = URL.createObjectURL(new Blob([makeCube(lut, 33)]))
@@ -259,6 +280,11 @@ export default function MatcherPage() {
   const downloadAll = () => {
     const ready = shotsRef.current.filter(s => s.match)
     if (!ready.length) { toast('Belum ada shot yang matched', 'warn'); return }
+    const totalCost = matchCost * ready.length
+    if (!isAdmin && credits < totalCost) {
+      toast(`Butuh ${totalCost} kredit untuk ${ready.length} LUT — saldo ${credits}. Beli di Shop 🛍`, 'err')
+      return
+    }
     ready.forEach((s, i) => setTimeout(() => downloadShot(s), i * 600))
     toast(`⬇ Download ${ready.length} LUT dimulai...`)
   }
@@ -275,6 +301,13 @@ export default function MatcherPage() {
         fL: m.muF[0], fa: m.muF[1], fb: m.muF[2],
         rL: m.muR[0], ra: m.muR[1], rb: m.muR[2],
         curve: Array.from(m.curve).map(v => v.toFixed(5)).join(','),
+        bh0: m.bandH[0], bh1: m.bandH[1], bh2: m.bandH[2], bh3: m.bandH[3],
+        bh4: m.bandH[4], bh5: m.bandH[5], bh6: m.bandH[6], bh7: m.bandH[7],
+        bs0: m.bandS[0], bs1: m.bandS[1], bs2: m.bandS[2], bs3: m.bandS[3],
+        bs4: m.bandS[4], bs5: m.bandS[5], bs6: m.bandS[6], bs7: m.bandS[7],
+        bl0: m.bandL[0], bl1: m.bandL[1], bl2: m.bandL[2], bl3: m.bandL[3],
+        bl4: m.bandL[4], bl5: m.bandL[5], bl6: m.bandL[6], bl7: m.bandL[7],
+        skh: m.skinH, sks: m.skinS, skl: m.skinL, skw: m.skinW, skp: m.skinP,
         amount: strengthRef.current,
       },
     }], shot.name)
@@ -303,6 +336,11 @@ export default function MatcherPage() {
             </h1>
             <p className="text-t3 text-[11px] mt-0.5 font-mono hidden sm:block">Samakan warna semua klip ke satu master look — LUT per klip</p>
           </div>
+          {authUser && !isAdmin && (
+            <Link href="/shop" className="text-[10px] font-bold text-ok bg-ok/10 border border-ok/20 px-2.5 py-1.5 rounded-full flex-shrink-0 hover:bg-ok/20 transition-colors">
+              🤖 {credits}
+            </Link>
+          )}
           {matchedCount > 0 && (
             <button onClick={downloadAll}
               className="hidden md:flex items-center gap-2 px-4 py-2.5 bg-accent text-white rounded-xl text-xs font-black uppercase tracking-wider hover:bg-orange-400 transition-colors shadow-lg shadow-accent/20">

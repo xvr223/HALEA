@@ -1,5 +1,10 @@
 'use client'
 import { useState, useRef, useEffect } from 'react'
+import Link from 'next/link'
+import { useRouter } from 'next/navigation'
+import { useAuthStore } from '@/store/auth'
+import { useSettingsStore } from '@/store/settings'
+import { toast } from '@/components/ui'
 import { Send, Trash2, Sparkles } from 'lucide-react'
 
 const SYSTEM = `Kamu adalah HALEA AI — asisten khusus color grading & video editing, dibuat untuk HALEA by @robbiesatriaa.
@@ -36,10 +41,24 @@ export default function AIPage() {
   const endRef   = useRef<HTMLDivElement>(null)
   const inputRef = useRef<HTMLTextAreaElement>(null)
 
+  const router = useRouter()
+  const { user: authUser, credits, useCredit, addCredits } = useAuthStore()
+  const aiChatCost = useSettingsStore(s => s.aiChatCost)
+  const isAdmin = authUser?.role === 'admin'
+
   useEffect(() => { endRef.current?.scrollIntoView({ behavior: 'smooth' }) }, [msgs])
 
   const send = async (msg: string) => {
     if (!msg.trim() || loading) return
+    if (!authUser) {
+      toast('Daftar gratis dulu untuk chat dengan HALEA AI ✦', 'warn')
+      router.push('/login?next=/ai')
+      return
+    }
+    if (!useCredit(aiChatCost)) {
+      toast(`Kredit AI habis — chat butuh ${aiChatCost} kredit. Beli di Shop 🛍`, 'err')
+      return
+    }
     setInput('')
     setLoading(true)
     setMsgs(m => [...m, { role: 'user', text: msg }, { role: 'assistant', text: '...' }])
@@ -57,12 +76,13 @@ export default function AIPage() {
       setMsgs(m => [...m.slice(0, -1), { role: 'assistant', text }])
       setHistory(([...newHistory, { role: 'assistant' as const, content: text }]).slice(-20))
     } catch (e: unknown) {
+      if (!isAdmin) addCredits(aiChatCost)   // refund — pesan gagal terkirim
       const errMsg = e instanceof Error ? e.message : 'Unknown error'
       setMsgs(m => [...m.slice(0, -1), {
         role: 'assistant',
         text: errMsg.includes('GROQ_API_KEY') || errMsg.includes('belum di-set') || errMsg.includes('API key')
-          ? '⚠️ **Layanan AI sedang tidak tersedia.**\n\nCoba lagi dalam beberapa saat.'
-          : `❌ ${errMsg}`
+          ? '⚠️ **Layanan AI sedang tidak tersedia.**\n\nKredit kamu dikembalikan. Coba lagi dalam beberapa saat.'
+          : `❌ ${errMsg} — kredit dikembalikan.`
       }])
     }
     setLoading(false)
@@ -83,11 +103,22 @@ export default function AIPage() {
               <p className="text-t3 text-[10px] font-mono mt-0.5">Powered by HALEA</p>
             </div>
           </div>
-          <button
-            onClick={() => { setMsgs(m => m.slice(0, 2)); setHistory([]) }}
-            className="p-2.5 rounded-xl text-t3 hover:text-err hover:bg-err/10 transition-colors border border-transparent hover:border-err/20">
-            <Trash2 size={15}/>
-          </button>
+          <div className="flex items-center gap-2">
+            {authUser ? (!isAdmin && (
+              <Link href="/shop" className="text-[10px] font-bold text-ok bg-ok/10 border border-ok/20 px-2.5 py-1.5 rounded-full hover:bg-ok/20 transition-colors">
+                🤖 {credits} kredit
+              </Link>
+            )) : (
+              <Link href="/login?next=/ai" className="text-[10px] font-bold text-white bg-accent px-3 py-1.5 rounded-full hover:bg-orange-400 transition-colors">
+                Masuk →
+              </Link>
+            )}
+            <button
+              onClick={() => { setMsgs(m => m.slice(0, 2)); setHistory([]) }}
+              className="p-2.5 rounded-xl text-t3 hover:text-err hover:bg-err/10 transition-colors border border-transparent hover:border-err/20">
+              <Trash2 size={15}/>
+            </button>
+          </div>
         </div>
 
         {/* Messages */}
