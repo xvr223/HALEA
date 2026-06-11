@@ -4,6 +4,7 @@ import Link from 'next/link'
 import { Badge, DropZone, toast } from '@/components/ui'
 import { Zap, Settings2, Film, Download } from 'lucide-react'
 import { computeSmartMatch, srgbToOklab, oklabToSrgb, parseCurve, sampleCurve } from '@/lib/colorMatch'
+import { encodeGrade, decodeGrade, copyText } from '@/lib/haleaCode'
 
 // ── Types ─────────────────────────────────────────────────────────────────────
 type NodeType = 'primary' | 'look' | 'halation' | 'match'
@@ -183,6 +184,7 @@ export default function StudioPage() {
   const [mobileTab, setMobileTab] = useState<MobileTab>('setup')
   const [skinGuard, setSkinGuard] = useState(false)
   const [matchAmount, setMatchAmount] = useState(0.8)
+  const [codeInput,  setCodeInput]  = useState('')
 
   const splitRef = useRef<HTMLDivElement>(null)
   const rafRef   = useRef<number|null>(null)
@@ -265,6 +267,58 @@ export default function StudioPage() {
   const handleStrength = (v:number) => {
     setMatchAmount(v)
     setNodes(prev=>prev.map(n=>n.type==='match'?{...n,params:{...n.params,amount:v}}:n))
+  }
+
+  // ── HALEA Code: share look as text ─────────────────────────────────────────
+  const copyHaleaCode = async () => {
+    if (!nodes.length) { toast('Match Colors dulu', 'warn'); return }
+    const code = encodeGrade(nodes, lutName)
+    if (await copyText(code)) toast('🧬 HALEA Code disalin — share di caption / bio!')
+    else window.prompt('Salin kode ini:', code)
+  }
+
+  const importHaleaCode = () => {
+    const res = decodeGrade(codeInput)
+    if (!res) { toast('Kode tidak valid — cek lagi', 'err'); return }
+    setNodes(res.nodes.map(n => ({ ...n, id: mkId() })))
+    const matchN = res.nodes.find(n=>n.type==='match')
+    const primN  = res.nodes.find(n=>n.type==='primary')
+    const lookN  = res.nodes.find(n=>n.type==='look')
+    const halN   = res.nodes.find(n=>n.type==='halation')
+    const halVal = halN ? (halN.params.intensity as number) : 0
+    if (matchN) {
+      const p = matchN.params
+      setMatchAmount(p.amount as number)
+      // approximate classic params from the matrix/means (for stats + .xmp export)
+      setGrade({
+        temp:  clamp(((p.rb as number)-(p.fb as number))*3.5, -0.4, 0.4),
+        tint:  clamp(((p.ra as number)-(p.fa as number))*3.5, -0.3, 0.3),
+        gamma: clamp(((p.rL as number)-(p.fL as number))*1.2, -0.3, 0.3),
+        con:   clamp(((p.m0 as number)-1)*0.8, -0.3, 0.3),
+        sat:   clamp((((p.m4 as number)+(p.m8 as number))/2-1)*0.6, -0.4, 0.4),
+        lift: 0, halation: halVal, look:'smart', lookAmount:0,
+        desc: res.name || 'HALEA Code', matched:true,
+        toneDesc: res.name ? `"${res.name}"` : 'Imported look',
+        shadowCast:'—', highCast:'—',
+        satRatio: ((p.m4 as number)+(p.m8 as number))/2,
+      })
+    } else if (primN) {
+      const p = primN.params
+      setGrade({
+        temp:p.temp as number, tint:p.tint as number, con:p.con as number,
+        gamma:p.gamma as number, sat:p.sat as number, lift:p.lift as number,
+        halation: halVal,
+        look: lookN ? String(lookN.params.look) : 'natural',
+        lookAmount: lookN ? (lookN.params.amount as number) : 0,
+        desc: res.name || 'HALEA Code', matched:false,
+      })
+    }
+    if (res.name) setLutName(res.name.replace(/\s+/g,'_'))
+    // imported code replaces the reference flow — clear ref so auto re-match
+    // doesn't overwrite the imported look when footage changes
+    setRefImg(null); setRefData(null)
+    setLut(null); setCodeInput('')
+    toast('✦ Look dimuat dari HALEA Code!')
   }
 
   const handleRefPhoto = (f: File) => {
@@ -467,6 +521,20 @@ export default function StudioPage() {
           <h2 className="font-fraunces text-lg font-semibold leading-tight mt-0.5">Match Any <span className="italic text-accent">Look</span></h2>
         </div>
         <div className="flex-1 overflow-y-auto p-4 flex flex-col gap-5">
+          {/* HALEA Code import */}
+          <div>
+            <div className="flex items-center gap-2 mb-2"><span className="text-[9px] font-black tracking-widest uppercase text-a3">🧬 Punya HALEA Code?</span><div className="flex-1 h-px bg-b1"/></div>
+            <div className="flex gap-1.5">
+              <input value={codeInput} onChange={e=>setCodeInput(e.target.value)}
+                onKeyDown={e=>e.key==='Enter'&&codeInput.trim()&&importHaleaCode()}
+                placeholder="Paste kode look di sini..."
+                className="flex-1 bg-s2 border border-b1 text-txt px-2.5 py-2 rounded-lg text-[11px] outline-none focus:border-a3 transition-colors placeholder:text-t3 min-w-0 font-mono"/>
+              <button onClick={importHaleaCode} disabled={!codeInput.trim()}
+                className="px-3 py-2 bg-a3/15 border border-a3/30 text-a3 rounded-lg text-[11px] font-bold hover:bg-a3/25 disabled:opacity-40 transition-colors flex-shrink-0">
+                Load
+              </button>
+            </div>
+          </div>
           <div>
             <div className="flex items-center gap-2 mb-2"><span className="text-[9px] font-black tracking-widest uppercase text-accent">① Reference Photo</span><div className="flex-1 h-px bg-b1"/></div>
             <p className="text-[10px] text-t3 mb-2 leading-relaxed">Photo dengan look yang mau kamu tiru.</p>
@@ -613,6 +681,14 @@ export default function StudioPage() {
             </button>
           )}
 
+          {/* HALEA Code copy */}
+          {nodes.length>0&&(
+            <button onClick={copyHaleaCode}
+              className="w-full py-2.5 rounded-xl text-[11px] font-bold border border-a4/30 bg-a4/10 text-a4 hover:bg-a4/20 transition-colors flex items-center justify-center gap-1.5">
+              🧬 Salin HALEA Code
+            </button>
+          )}
+
           {/* Shot Matcher promo */}
           <Link href="/matcher"
             className="block w-full py-2.5 rounded-xl text-[11px] font-bold border border-b2 bg-s2 text-t2 hover:border-accent/40 hover:text-accent transition-colors text-center">
@@ -659,6 +735,21 @@ export default function StudioPage() {
                   {i<3&&<span className="text-b2 text-[10px]">›</span>}
                 </div>
               ))}
+            </div>
+
+            {/* HALEA Code import */}
+            <div className="bg-s2 border border-a3/20 rounded-2xl p-4">
+              <p className="text-[9px] font-black tracking-widest uppercase text-a3 mb-2">🧬 Punya HALEA Code?</p>
+              <div className="flex gap-1.5">
+                <input value={codeInput} onChange={e=>setCodeInput(e.target.value)}
+                  placeholder="Paste kode look..."
+                  className="flex-1 bg-s3 border border-b1 text-txt px-3 py-2.5 rounded-xl text-xs outline-none focus:border-a3 transition-colors placeholder:text-t3 min-w-0 font-mono"/>
+                <button onClick={importHaleaCode} disabled={!codeInput.trim()}
+                  className="px-4 py-2.5 bg-a3/15 border border-a3/30 text-a3 rounded-xl text-xs font-bold disabled:opacity-40 transition-colors flex-shrink-0 active:scale-[0.97]">
+                  Load
+                </button>
+              </div>
+              <p className="text-[9px] text-t3 mt-2">Dapat kode dari creator? Paste → look langsung ke-load</p>
             </div>
 
             {/* Reference photo card */}
@@ -864,6 +955,14 @@ export default function StudioPage() {
                   <span className="text-[10px] text-t3 font-normal mt-0.5 block">CapCut Pro</span>
                 </button>
               </div>
+            )}
+
+            {/* HALEA Code copy */}
+            {nodes.length>0&&(
+              <button onClick={copyHaleaCode}
+                className="w-full py-4 rounded-2xl text-sm font-bold border border-a4/30 bg-a4/10 text-a4 active:scale-[0.97] transition-all flex items-center justify-center gap-2">
+                🧬 Salin HALEA Code — share look via teks
+              </button>
             )}
 
             {/* Share Card */}

@@ -4,6 +4,7 @@ import Link from 'next/link'
 import { ArrowLeft, Download, Plus, Zap, Camera } from 'lucide-react'
 import { toast } from '@/components/ui'
 import { computeSmartMatch, applyMatch, bakeMatchLUT, SmartMatchResult } from '@/lib/colorMatch'
+import { encodeGrade, copyText } from '@/lib/haleaCode'
 
 // ── Types ─────────────────────────────────────────────────────────────────────
 interface Shot {
@@ -88,13 +89,14 @@ function RefZone({ src, onFile, onClear }: { src: string | null; onFile: (f: Fil
 }
 
 function ShotCard({
-  shot, hasRef, onName, onRemove, onDownload,
+  shot, hasRef, onName, onRemove, onDownload, onCopyCode,
 }: {
   shot: Shot
   hasRef: boolean
   onName: (id: string, name: string) => void
   onRemove: (id: string) => void
   onDownload: (shot: Shot) => void
+  onCopyCode: (shot: Shot) => void
 }) {
   const [hold, setHold] = useState(false)
   const showAfter = shot.afterSrc && !hold
@@ -136,10 +138,16 @@ function ShotCard({
       <div className="p-3 flex flex-col gap-2">
         <input value={shot.name} onChange={e => onName(shot.id, e.target.value)}
           className="w-full bg-s3 border border-b1 text-txt px-2.5 py-1.5 rounded-lg text-xs outline-none focus:border-accent transition-colors font-medium" />
-        <button onClick={() => onDownload(shot)} disabled={!shot.match}
-          className="w-full py-2 rounded-lg text-[11px] font-bold bg-accent/10 border border-accent/30 text-accent hover:bg-accent/20 disabled:opacity-30 disabled:cursor-not-allowed transition-colors flex items-center justify-center gap-1.5">
-          <Download size={12} /> LUT .cube
-        </button>
+        <div className="grid grid-cols-2 gap-1.5">
+          <button onClick={() => onDownload(shot)} disabled={!shot.match}
+            className="py-2 rounded-lg text-[11px] font-bold bg-accent/10 border border-accent/30 text-accent hover:bg-accent/20 disabled:opacity-30 disabled:cursor-not-allowed transition-colors flex items-center justify-center gap-1.5">
+            <Download size={12} /> .cube
+          </button>
+          <button onClick={() => onCopyCode(shot)} disabled={!shot.match}
+            className="py-2 rounded-lg text-[11px] font-bold bg-a4/10 border border-a4/30 text-a4 hover:bg-a4/20 disabled:opacity-30 disabled:cursor-not-allowed transition-colors flex items-center justify-center gap-1">
+            🧬 Code
+          </button>
+        </div>
       </div>
     </div>
   )
@@ -254,6 +262,25 @@ export default function MatcherPage() {
     toast(`⬇ Download ${ready.length} LUT dimulai...`)
   }
 
+  const copyShotCode = async (shot: Shot) => {
+    if (!shot.match) return
+    const m = shot.match
+    const code = encodeGrade([{
+      type: 'match', enabled: true,
+      params: {
+        m0: m.matrix[0], m1: m.matrix[1], m2: m.matrix[2],
+        m3: m.matrix[3], m4: m.matrix[4], m5: m.matrix[5],
+        m6: m.matrix[6], m7: m.matrix[7], m8: m.matrix[8],
+        fL: m.muF[0], fa: m.muF[1], fb: m.muF[2],
+        rL: m.muR[0], ra: m.muR[1], rb: m.muR[2],
+        curve: Array.from(m.curve).map(v => v.toFixed(5)).join(','),
+        amount: strengthRef.current,
+      },
+    }], shot.name)
+    if (await copyText(code)) toast('🧬 Code "' + shot.name + '" disalin — paste di Studio / share!')
+    else window.prompt('Salin kode ini:', code)
+  }
+
   const setName = (id: string, name: string) => setShots(prev => prev.map(s => s.id === id ? { ...s, name } : s))
   const removeShot = (id: string) => setShots(prev => prev.filter(s => s.id !== id))
 
@@ -348,7 +375,7 @@ export default function MatcherPage() {
               <div className="grid grid-cols-1 sm:grid-cols-2 xl:grid-cols-3 gap-3">
                 {shots.map(s => (
                   <ShotCard key={s.id} shot={s} hasRef={!!refSrc}
-                    onName={setName} onRemove={removeShot} onDownload={downloadShot} />
+                    onName={setName} onRemove={removeShot} onDownload={downloadShot} onCopyCode={copyShotCode} />
                 ))}
                 {shots.length < MAX_SHOTS && <AddShotsZone onFiles={handleShotFiles} count={shots.length} />}
               </div>
