@@ -1,8 +1,17 @@
 // HALEA Code — share a grade as a short text code. No server, no database:
-// the code IS the look. Binary-packed params → base64url, ~40 chars for a
-// basic grade, ~160 chars for a full Smart Match (fits in an IG caption/comment).
+// the code IS the look.
 //
-// Layout: [ver u8][flags u8][name? len+ascii][match? 95B][primary? 6B][look? 2B][halation? 2B][checksum u8]
+// v2 layout (compact): [ver=2][flags][name? len+ascii≤12]
+//   [match? 9×i16 matrix + 3×i16 offset + 16×u8 curve + u8 amount = 41B]
+//   [primary? 6×i8 = 6B, omitted when all-zero]
+//   [look? 2B][halation? 1B][checksum]
+// Typical sizes: basic look ~22 chars, full Smart Match ~66–80 chars.
+//
+// Compression tricks (lossless where it matters):
+// - means folded into one offset vector: T(x−μf)+μr ≡ Tx+o with o = μr − T·μf
+// - tone curve 64→16 knots on encode, smoothstep-upsampled back to 64 on decode
+//   (in-session curves stay full 64-knot; only transport is compressed)
+// v1 codes (longer, older) still decode — version byte is checked.
 
 export interface CodeNode {
   type: 'match' | 'primary' | 'look' | 'halation'
@@ -17,6 +26,7 @@ const PRIM_KEYS = ['lift', 'gamma', 'temp', 'tint', 'con', 'sat'] as const
 
 const cl = (v: number, lo: number, hi: number) => v < lo ? lo : v > hi ? hi : v
 
+// ── Encode (always v2) ────────────────────────────────────────────────────────
 export function encodeGrade(nodes: CodeNode[], name = ''): string {
   const bytes: number[] = []
   const u8  = (v: number) => bytes.push(v & 0xFF)
@@ -26,32 +36,43 @@ export function encodeGrade(nodes: CodeNode[], name = ''): string {
   const prim  = nodes.find(n => n.type === 'primary'  && n.enabled)
   const look  = nodes.find(n => n.type === 'look'     && n.enabled)
   const hal   = nodes.find(n => n.type === 'halation' && n.enabled)
-  const cleanName = name.replace(/[^\x20-\x7E]/g, '').trim().slice(0, 16)
+  const cleanName = name.replace(/[^\x20-\x7E]/g, '').trim().slice(0, 12)
+
+  // skip the trim block entirely when it's all zeros (common case)
+  const primDirty = !!prim && PRIM_KEYS.some(k => Math.abs((prim.params[k] as number) || 0) > 0.004)
 
   let flags = 0
-  if (match) flags |= 1
-  if (prim)  flags |= 2
-  if (look)  flags |= 4
-  if (hal)   flags |= 8
+  if (match)     flags |= 1
+  if (primDirty) flags |= 2
+  if (look)      flags |= 4
+  if (hal)       flags |= 8
   if (cleanName) flags |= 16
-  u8(1); u8(flags)
+  u8(2); u8(flags)
 
   if (cleanName) {
     u8(cleanName.length)
     for (const ch of cleanName) u8(ch.charCodeAt(0))
   }
   if (match) {
-    const p = match.params
-    for (let i = 0; i < 9; i++) i16((p['m' + i] as number) * 8192)
-    for (const k of MEAN_KEYS)  i16((p[k] as number) * 16384)
+    const p = match.params as Record<string, number | string>
+    const m = (i: number) => p['m' + i] as number
+    for (let i = 0; i < 9; i++) i16(m(i) * 8192)
+    // fold means into offset: o = μr − T·μf  (exact algebra, 3 values instead of 6)
+    const fL = p.fL as number, fa = p.fa as number, fb = p.fb as number
+    i16(((p.rL as number) - (m(0) * fL + m(1) * fa + m(2) * fb)) * 8192)
+    i16(((p.ra as number) - (m(3) * fL + m(4) * fa + m(5) * fb)) * 8192)
+    i16(((p.rb as number) - (m(6) * fL + m(7) * fa + m(8) * fb)) * 8192)
+    // resample tone curve 64 → 16 knots
     const curve = String(p.curve).split(',').map(Number)
-    for (let k = 0; k < 64; k++) {
-      const v = curve.length === 64 ? curve[k] : curve[Math.min(curve.length - 1, k)] ?? k / 63
+    for (let j = 0; j < 16; j++) {
+      const t = j / 15 * (curve.length - 1)
+      const i = Math.min(curve.length - 2, Math.floor(t))
+      const v = curve[i] + (curve[i + 1] - curve[i]) * (t - i)
       u8(Math.round(cl(v, 0, 1) * 255))
     }
     u8(Math.round(cl(p.amount as number, 0, 1) * 100))
   }
-  if (prim) {
+  if (primDirty && prim) {
     for (const k of PRIM_KEYS) u8(Math.round(cl(prim.params[k] as number, -0.635, 0.635) * 200))
   }
   if (look) {
@@ -59,8 +80,7 @@ export function encodeGrade(nodes: CodeNode[], name = ''): string {
     u8(Math.round(cl(look.params.amount as number, 0, 1) * 100))
   }
   if (hal) {
-    u8(Math.round(cl(hal.params.threshold as number, 0, 1.27) * 100))
-    u8(Math.round(cl(hal.params.intensity as number, 0, 1.27) * 200))
+    u8(Math.round(cl(hal.params.intensity as number, 0, 1.27) * 200))   // threshold fixed at 0.65
   }
 
   let sum = 0
@@ -71,6 +91,7 @@ export function encodeGrade(nodes: CodeNode[], name = ''): string {
   return PREFIX + btoa(bin).replace(/\+/g, '-').replace(/\//g, '_').replace(/=+$/, '')
 }
 
+// ── Decode (v1 + v2) ──────────────────────────────────────────────────────────
 // Accepts a raw code OR any text containing one (whole captions can be pasted)
 export function decodeGrade(text: string): { nodes: CodeNode[]; name: string } | null {
   try {
@@ -92,7 +113,8 @@ export function decodeGrade(text: string): { nodes: CodeNode[]; name: string } |
     const i16 = () => { const lo = bytes[pos++], hi = bytes[pos++]; let v = (hi << 8) | lo; if (v > 32767) v -= 65536; return v }
     const i8  = () => { let v = u8(); if (v > 127) v -= 256; return v }
 
-    if (u8() !== 1) return null
+    const ver = u8()
+    if (ver !== 1 && ver !== 2) return null
     const flags = u8()
 
     let name = ''
@@ -105,10 +127,33 @@ export function decodeGrade(text: string): { nodes: CodeNode[]; name: string } |
     if (flags & 1) {
       const params: Record<string, number | string> = {}
       for (let i = 0; i < 9; i++) params['m' + i] = i16() / 8192
-      for (const k of MEAN_KEYS) params[k] = i16() / 16384
-      const curve: string[] = []
-      for (let k = 0; k < 64; k++) curve.push((u8() / 255).toFixed(5))
-      params.curve  = curve.join(',')
+      if (ver === 1) {
+        for (const k of MEAN_KEYS) params[k] = i16() / 16384
+        const curve: string[] = []
+        for (let k = 0; k < 64; k++) curve.push((u8() / 255).toFixed(5))
+        params.curve = curve.join(',')
+      } else {
+        // v2: offset form — equivalent transform with zero footage-mean
+        params.fL = 0; params.fa = 0; params.fb = 0
+        params.rL = i16() / 8192; params.ra = i16() / 8192; params.rb = i16() / 8192
+        // upsample 16 → 64 knots with Catmull-Rom (passes through every knot,
+        // C¹ smooth, clamped per-segment to stay monotonic)
+        const c16: number[] = []
+        for (let j = 0; j < 16; j++) c16.push(u8() / 255)
+        const curve: string[] = []
+        for (let k = 0; k < 64; k++) {
+          const t = k / 63 * 15
+          const i = Math.min(14, Math.floor(t))
+          const f = t - i
+          const p0 = c16[Math.max(0, i - 1)], p1 = c16[i], p2 = c16[i + 1], p3 = c16[Math.min(15, i + 2)]
+          let v = 0.5 * ((2 * p1) + (-p0 + p2) * f
+            + (2 * p0 - 5 * p1 + 4 * p2 - p3) * f * f
+            + (-p0 + 3 * p1 - 3 * p2 + p3) * f * f * f)
+          v = Math.max(Math.min(p1, p2), Math.min(Math.max(p1, p2), v))
+          curve.push(v.toFixed(5))
+        }
+        params.curve = curve.join(',')
+      }
       params.amount = u8() / 100
       nodes.push({ type: 'match', enabled: true, params })
     }
@@ -122,7 +167,8 @@ export function decodeGrade(text: string): { nodes: CodeNode[]; name: string } |
       nodes.push({ type: 'look', enabled: true, params: { look: LOOKS[Math.min(idx, LOOKS.length - 1)], amount } })
     }
     if (flags & 8) {
-      nodes.push({ type: 'halation', enabled: true, params: { threshold: u8() / 100, intensity: u8() / 200 } })
+      const threshold = ver === 1 ? u8() / 100 : 0.65
+      nodes.push({ type: 'halation', enabled: true, params: { threshold, intensity: u8() / 200 } })
     }
     if (!nodes.length) return null
     return { nodes, name }
