@@ -360,6 +360,7 @@ export default function StudioPage() {
   const copyHaleaCode = async () => {
     if (!nodes.length) { toast('Match Colors dulu', 'warn'); return }
     const code = encodeGrade(nodes, lutName)
+    try { localStorage.setItem('halea_m_code', '1') } catch {}   // HALEA Academy mission
     if (await copyText(code)) toast('🧬 HALEA Code disalin — share di caption / bio!')
     else window.prompt('Salin kode ini:', code)
   }
@@ -454,6 +455,7 @@ export default function StudioPage() {
     await new Promise(r=>setTimeout(r,20))
     setLut(bakeLUT(nodes, lutSize, skinGuard, logProfile, logGain))
     setBaking(false)
+    try { localStorage.setItem('halea_m_bake', '1') } catch {}   // HALEA Academy mission
     toast(logProfile!=='rec709' ? `✓ LUT baked — termasuk konversi ${logLabel}` : '✓ LUT baked — siap di-export')
   }, [nodes, lutSize, skinGuard, logProfile, logGain, logLabel])
 

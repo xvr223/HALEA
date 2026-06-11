@@ -1,57 +1,323 @@
 'use client'
-import { useState, useEffect } from 'react'
+import { useState, useEffect, useCallback, useRef } from 'react'
+import Link from 'next/link'
+import { toast } from '@/components/ui'
+import { CHAPTERS, RANKS, LESSON_XP, MISSION_XP, Lesson } from './curriculum'
 
-const TOOLS = [
-  { id: 'grainGen',  icon: '🎞', title: 'Film Grain Generator', badge: 'NEW', color: 'text-accent' },
-  { id: 'frameCalc', icon: '⏱', title: 'Frame Rate Calc', badge: 'CALC', color: 'text-a2' },
-  { id: 'colorTemp', icon: '🌡', title: 'Color Temp Chart', badge: 'REF', color: 'text-warn' },
-  { id: 'logGuide',  icon: '📊', title: 'Log Exposure Guide', badge: 'GUIDE', color: 'text-accent' },
-  { id: 'storage',   icon: '💾', title: 'Storage Calculator', badge: 'CALC', color: 'text-a2' },
-  { id: 'aspect',    icon: '📐', title: 'Aspect Ratio Guide', badge: 'REF', color: 'text-a3' },
-  { id: 'shortcuts', icon: '⌨️', title: 'Premiere Shortcuts', badge: 'CHEAT', color: 'text-a4' },
-  { id: 'shotMatch', icon: '🎨', title: 'Shot Match Tips', badge: 'TIPS', color: 'text-ok' },
-  { id: 'export',    icon: '🚀', title: 'Export Settings', badge: 'GUIDE', color: 'text-accent' },
-]
+// ── Progress store (localStorage) ─────────────────────────────────────────────
+interface Progress { done: string[]; xp: number; missions: string[] }
+const EMPTY: Progress = { done: [], xp: 0, missions: [] }
 
-const LESSONS = [
-  { id: 1, title: 'Apa itu LUT?', sub: 'Konsep dasar color grading', tag: 'DASAR', color: 'text-ok border-ok/30 bg-ok/10', body: `<h3>LUT = Look Up Table</h3><p>File berisi tabel warna — tiap input RGB dipetakan ke output. Mirip filter Instagram tapi jauh lebih presisi.</p><h3>Tipe LUT</h3><ul><li><strong>Technical</strong> — konversi log ke Rec.709</li><li><strong>Creative</strong> — gaya visual (cinematic, warm, dll)</li></ul><div class="tip">💡 LUT dari HALEA menggabungkan technical + creative dalam satu file.</div>` },
-  { id: 2, title: 'Apa itu Log?', sub: 'Kenapa footage terlihat flat', tag: 'DASAR', color: 'text-ok border-ok/30 bg-ok/10', body: `<h3>Log = Profile Simpan Detail Maksimal</h3><p>Kamera sengaja ga proses warna biar detail shadow & highlight kesimpen. Hasilnya flat — itu tugas editor untuk grade.</p><h3>Pipeline yang Benar</h3><p>Log → LUT (technical) → Color Grade → Export</p>` },
-  { id: 3, title: 'Halation Effect', sub: 'Glow khas film analog', tag: 'FILM LOOK', color: 'text-accent border-accent/30 bg-accent/10', body: `<h3>Halation — Cahaya Bocor</h3><p>Di film analog, cahaya terang nembus emulsi dan mantul balik, bikin glow kemerahan di highlight. Efek ini yang bikin film look terasa organik.</p><h3>Parameter Penting</h3><ul><li><strong>Threshold</strong> — highlight pemicu halation</li><li><strong>Intensity</strong> — kekuatan blend</li><li><strong>Light Bleed</strong> — red channel fringe (khas CineStill)</li></ul>` },
-  { id: 4, title: 'Apply LUT di Premiere 2025', sub: 'Step by step', tag: 'TUTORIAL', color: 'text-a3 border-a3/30 bg-a3/10', body: `<h3>Via Lumetri Color</h3><ul><li>Klik klip di timeline</li><li>Buka Lumetri Color panel</li><li>Creative → Look → Browse → pilih .cube</li><li>Adjust Intensity (80-100%)</li></ul><div class="tip">💡 Pakai Adjustment Layer di track atas — apply LUT sekali, kena semua klip.</div>` },
-  { id: 5, title: 'Grade Nodes di HALEA', sub: 'PowerGrade-style workflow', tag: 'HALEA', color: 'text-accent border-accent/30 bg-accent/10', body: `<h3>Node Pipeline</h3><p>Tiap node diproses berurutan, semua di-bake jadi .cube universal:</p><ol><li>Log Input — decode log format</li><li>Primary — exposure, temp, contrast</li><li>Curves — tone curve interaktif</li><li>HSL Secondary — target warna spesifik</li><li>Look — style cinematic</li><li>Halation — film glow</li></ol>` },
-  { id: 6, title: 'Teal & Orange Recipe', sub: 'Look blockbuster Hollywood', tag: 'RECIPE', color: 'text-a2 border-a2/30 bg-a2/10', body: `<h3>Recipe di Grade Nodes</h3><ul><li>Primary: temp +0.1, contrast +0.12</li><li>Curves R: angkat highlight merah dikit</li><li>Curves B: turunin mid biru</li><li>HSL Sky: geser hue ke teal</li><li>Look: Teal Orange, amount 50%</li></ul><div class="tip">💡 Jangan overdo. Amount 40-60% lebih kelas dari yang lebay.</div>` },
-  { id: 7, title: 'Cara Jual Preset & LUT', sub: 'Monetisasi creator', tag: 'BISNIS', color: 'text-a2 border-a2/30 bg-a2/10', body: `<h3>Pricing Strategy</h3><ul><li>Single LUT: $5-15</li><li>Pack (5-10 LUT): $25-50</li><li>Bundle besar: $50-99</li></ul><h3>Platform</h3><ul><li>Gumroad — paling gampang</li><li>Website sendiri + Stripe</li></ul><div class="tip">💡 Free tier penting! 1-2 LUT gratis untuk narik orang, upsell ke pack berbayar.</div>` },
-]
+function loadProgress(): Progress {
+  try {
+    const p = JSON.parse(localStorage.getItem('halea_learn') || '')
+    return { done: p.done || [], xp: p.xp || 0, missions: p.missions || [] }
+  } catch { return { ...EMPTY } }
+}
+function saveProgress(p: Progress) {
+  try { localStorage.setItem('halea_learn', JSON.stringify(p)) } catch {}
+}
+// Scan mission flags set by Studio/Matcher → auto-claim XP
+function claimMissions(p: Progress): { next: Progress; gained: number } {
+  let gained = 0
+  const missions = [...p.missions]
+  for (const ch of CHAPTERS) for (const l of ch.lessons) {
+    if (!l.mission || missions.includes(l.mission.flag)) continue
+    try {
+      if (localStorage.getItem(l.mission.flag)) { missions.push(l.mission.flag); gained += MISSION_XP }
+    } catch {}
+  }
+  return gained ? { next: { ...p, missions, xp: p.xp + gained }, gained } : { next: p, gained: 0 }
+}
+const rankFor = (xp: number) => RANKS.reduce((acc, r) => xp >= r.xp ? r : acc, RANKS[0])
 
-// Lazy factories so each click mounts a fresh component instance
-const TOOL_CONTENT: Record<string, () => JSX.Element> = {
-  grainGen:  () => <GrainGen />,
-  frameCalc: () => <FrameCalc />,
-  colorTemp: () => <ColorTempChart />,
-  logGuide:  () => <LogGuide />,
-  storage:   () => <StorageCalc />,
-  shortcuts: () => <ShortcutsSheet />,
-  aspect:    () => <AspectGuide />,
-  shotMatch: () => <ShotMatchTips />,
-  export:    () => <ExportGuide />,
+// ── Lesson modal (hoisted — quiz state stays alive across parent renders) ─────
+function LessonModal({ lesson, isDone, missionDone, onClose, onComplete, onManualMission }: {
+  lesson: Lesson
+  isDone: boolean
+  missionDone: boolean
+  onClose: () => void
+  onComplete: (l: Lesson) => void
+  onManualMission: (flag: string) => void
+}) {
+  const [answers, setAnswers] = useState<(number | null)[]>(lesson.quiz.map(() => null))
+  const [checked, setChecked] = useState(false)
+  const allAnswered = answers.every(a => a !== null)
+  const allCorrect  = checked && lesson.quiz.every((q, i) => answers[i] === q.a)
+
+  return (
+    <div className="fixed inset-0 bg-black/80 backdrop-blur-sm z-50 flex items-center justify-center p-4 animate-fade-in"
+      onClick={e => e.target === e.currentTarget && onClose()}>
+      <div className="bg-s2 border border-b2 rounded-2xl max-w-lg w-full max-h-[85vh] overflow-y-auto">
+        <div className="flex items-center justify-between p-5 border-b border-b1 sticky top-0 bg-s2 z-10">
+          <div>
+            <h2 className="font-bold text-lg leading-tight">{lesson.title}</h2>
+            <p className="text-[11px] text-t3 mt-0.5">{lesson.sub} · ⏱ {lesson.mins} menit{isDone ? ' · ✓ Selesai' : ''}</p>
+          </div>
+          <button onClick={onClose} className="text-t2 hover:text-txt text-xl flex-shrink-0 ml-3">✕</button>
+        </div>
+
+        {/* Body */}
+        <div className="p-5 text-sm text-t2 leading-relaxed"
+          dangerouslySetInnerHTML={{ __html: lesson.body
+            .replace(/<h3>/g, '<h3 class="text-txt font-bold text-sm mt-4 mb-2 first:mt-0">')
+            .replace(/<ul>/g, '<ul class="list-disc pl-4 mb-3 space-y-1">')
+            .replace(/<ol>/g, '<ol class="list-decimal pl-4 mb-3 space-y-1">')
+            .replace(/<div class="tip">/g, '<div class="bg-accent/10 border border-accent/20 rounded-xl p-3 my-3 text-accent text-xs">')
+            .replace(/<strong>/g, '<strong class="text-txt">')
+          }} />
+
+        {/* Mission */}
+        {lesson.mission && (
+          <div className={`mx-5 mb-4 rounded-xl border p-4 ${missionDone ? 'bg-ok/10 border-ok/30' : 'bg-a2/5 border-a2/25'}`}>
+            <p className={`text-[9px] font-black tracking-widest uppercase mb-1.5 ${missionDone ? 'text-ok' : 'text-a2'}`}>
+              {missionDone ? '✓ Misi Selesai +' + MISSION_XP + ' XP' : '🎯 Misi Praktek · +' + MISSION_XP + ' XP'}
+            </p>
+            <p className="text-xs text-t2 leading-relaxed mb-3">{lesson.mission.text}</p>
+            {!missionDone && (
+              <div className="flex items-center gap-2">
+                <Link href={lesson.mission.href}
+                  className="px-4 py-2 bg-a2 text-black rounded-lg text-xs font-bold hover:bg-yellow-300 transition-colors">
+                  Kerjakan →
+                </Link>
+                <button onClick={() => onManualMission(lesson.mission!.flag)}
+                  className="text-[10px] text-t3 hover:text-t2 transition-colors">sudah kucoba, tandai ✓</button>
+              </div>
+            )}
+          </div>
+        )}
+
+        {/* Quiz */}
+        {!isDone ? (
+          <div className="mx-5 mb-5 rounded-xl border border-b2 bg-s3 p-4">
+            <p className="text-[9px] font-black tracking-widest uppercase text-accent mb-3">📝 Kuis — jawab benar semua untuk lanjut</p>
+            <div className="flex flex-col gap-4">
+              {lesson.quiz.map((q, qi) => (
+                <div key={qi}>
+                  <p className="text-xs font-bold text-txt mb-2">{qi + 1}. {q.q}</p>
+                  <div className="flex flex-col gap-1.5">
+                    {q.opts.map((opt, oi) => {
+                      const selected = answers[qi] === oi
+                      const showState = checked && selected
+                      const correct = oi === q.a
+                      return (
+                        <button key={oi}
+                          onClick={() => { if (!checked) setAnswers(a => a.map((v, i) => i === qi ? oi : v)) }}
+                          className={`text-left px-3 py-2 rounded-lg border text-xs transition-colors ${
+                            showState
+                              ? correct ? 'border-ok bg-ok/15 text-ok font-bold' : 'border-err bg-err/10 text-err'
+                              : selected ? 'border-accent bg-accent/10 text-txt font-bold' : 'border-b1 bg-s2 text-t2 hover:border-b3'
+                          }`}>
+                          {opt}{showState && (correct ? ' ✓' : ' ✗')}
+                        </button>
+                      )
+                    })}
+                  </div>
+                </div>
+              ))}
+            </div>
+            <div className="flex items-center gap-2 mt-4">
+              {!checked ? (
+                <button onClick={() => setChecked(true)} disabled={!allAnswered}
+                  className="px-5 py-2.5 bg-accent text-white rounded-xl text-xs font-bold hover:bg-orange-400 disabled:opacity-40 transition-colors">
+                  Cek Jawaban
+                </button>
+              ) : allCorrect ? (
+                <button onClick={() => onComplete(lesson)}
+                  className="px-5 py-2.5 bg-ok text-white rounded-xl text-xs font-black hover:opacity-90 transition-opacity animate-fade-in">
+                  🎉 Klaim +{LESSON_XP} XP
+                </button>
+              ) : (
+                <>
+                  <button onClick={() => { setChecked(false); setAnswers(lesson.quiz.map(() => null)) }}
+                    className="px-5 py-2.5 bg-s4 border border-b2 text-txt rounded-xl text-xs font-bold hover:border-b3 transition-colors">
+                    ↻ Coba Lagi
+                  </button>
+                  <span className="text-[11px] text-err">Ada yang belum tepat — baca lagi materinya 📖</span>
+                </>
+              )}
+            </div>
+          </div>
+        ) : (
+          <div className="mx-5 mb-5 rounded-xl border border-ok/30 bg-ok/10 p-4 text-center">
+            <p className="text-xs font-bold text-ok">✓ Pelajaran selesai — +{LESSON_XP} XP sudah diklaim</p>
+          </div>
+        )}
+      </div>
+    </div>
+  )
 }
 
+// ── Page ──────────────────────────────────────────────────────────────────────
 export default function LearnPage() {
+  const [progress, setProgress] = useState<Progress>(EMPTY)
+  const [activeLesson, setActiveLesson] = useState<Lesson | null>(null)
   const [activeTool, setActiveTool] = useState<string | null>(null)
-  const [activeLesson, setActiveLesson] = useState<typeof LESSONS[0] | null>(null)
-  const [done, setDone] = useState<Set<number>>(new Set())
+
+  const doneSet = new Set(progress.done)
+  const totalLessons = CHAPTERS.reduce((s, c) => s + c.lessons.length, 0)
+  const rank = rankFor(progress.xp)
+  const nextRank = RANKS[RANKS.indexOf(rank) + 1]
+  const rankPct = nextRank ? Math.min(100, Math.round((progress.xp - rank.xp) / (nextRank.xp - rank.xp) * 100)) : 100
+
+  // load + claim missions on mount and when returning to the tab
+  const progressRef = useRef(progress)
+  useEffect(() => { progressRef.current = progress }, [progress])
+
+  const refresh = useCallback((announce: boolean) => {
+    const base = progressRef.current === EMPTY ? loadProgress() : progressRef.current
+    const { next, gained } = claimMissions(base)
+    if (next !== progressRef.current) {
+      saveProgress(next)
+      progressRef.current = next
+      setProgress(next)
+    }
+    if (gained && announce) toast(`🎯 Misi selesai! +${gained} XP`)
+  }, [])
+
+  useEffect(() => {
+    refresh(true)
+    const onFocus = () => refresh(true)
+    window.addEventListener('focus', onFocus)
+    return () => window.removeEventListener('focus', onFocus)
+  }, [refresh])
+
+  const isUnlocked = (ci: number) => {
+    if (ci === 0) return true
+    const prev = CHAPTERS[ci - 1]
+    const need = Math.ceil(prev.lessons.length * 0.6)
+    return prev.lessons.filter(l => doneSet.has(l.id)).length >= need
+  }
+
+  const completeLesson = (lesson: Lesson) => {
+    const prev = progressRef.current
+    if (!prev.done.includes(lesson.id)) {
+      const before = rankFor(prev.xp)
+      const next = { ...prev, done: [...prev.done, lesson.id], xp: prev.xp + LESSON_XP }
+      saveProgress(next)
+      progressRef.current = next
+      setProgress(next)
+      toast(`✓ +${LESSON_XP} XP — ${lesson.title}`)
+      const after = rankFor(next.xp)
+      if (after !== before) setTimeout(() => toast(`🎉 Naik rank: ${after.title} ${after.icon}`), 800)
+    }
+    setActiveLesson(null)
+  }
+
+  const manualMission = (flag: string) => {
+    try { localStorage.setItem(flag, '1') } catch {}
+    refresh(true)
+  }
 
   return (
     <div className="max-w-6xl mx-auto px-4 sm:px-6 py-10">
 
-      {/* Header */}
-      <div className="mb-12">
-        <p className="text-[10px] font-bold tracking-[.2em] uppercase text-accent mb-3">Tools & Learn</p>
-        <h1 className="font-fraunces text-5xl font-semibold mb-3">Editor <span className="italic text-accent">Toolkit</span></h1>
-        <p className="text-t2 text-sm">Calculators, references, dan modul belajar color grading.</p>
+      {/* ── Header + progress ── */}
+      <div className="mb-10">
+        <p className="text-[10px] font-bold tracking-[.2em] uppercase text-accent mb-3">HALEA Academy</p>
+        <h1 className="font-fraunces text-4xl sm:text-5xl font-semibold mb-3">
+          Belajar <span className="italic text-accent">Color Grading</span>
+        </h1>
+        <p className="text-t2 text-sm mb-6 max-w-xl leading-relaxed">
+          6 bab berjenjang dari nol sampai jadi creator. Selesaikan pelajaran, lulus kuis, kerjakan misi — kumpulkan XP.
+        </p>
+
+        <div className="bg-s2 border border-b1 rounded-2xl p-5 flex flex-col sm:flex-row sm:items-center gap-5">
+          <div className="flex items-center gap-4 flex-1 min-w-0">
+            <span className="text-4xl flex-shrink-0">{rank.icon}</span>
+            <div className="flex-1 min-w-0">
+              <div className="flex items-baseline justify-between gap-3 mb-1.5">
+                <p className="font-bold text-base">{rank.title}</p>
+                <p className="text-[11px] font-mono text-accent font-bold flex-shrink-0">{progress.xp} XP</p>
+              </div>
+              <div className="h-2 bg-s4 rounded-full overflow-hidden">
+                <div className="h-full bg-gradient-to-r from-accent to-orange-400 rounded-full transition-all duration-700" style={{ width: rankPct + '%' }} />
+              </div>
+              <p className="text-[10px] text-t3 mt-1.5">
+                {nextRank ? `${nextRank.xp - progress.xp} XP lagi menuju ${nextRank.title} ${nextRank.icon}` : 'Rank maksimal tercapai! 👑'}
+              </p>
+            </div>
+          </div>
+          <div className="flex gap-6 sm:gap-5 sm:border-l border-b1 sm:pl-5 flex-shrink-0">
+            <div className="text-center">
+              <p className="font-black text-xl text-accent">{progress.done.length}<span className="text-t3 text-sm font-bold">/{totalLessons}</span></p>
+              <p className="text-[9px] text-t3 uppercase tracking-wider font-bold">Pelajaran</p>
+            </div>
+            <div className="text-center">
+              <p className="font-black text-xl text-a2">{progress.missions.length}</p>
+              <p className="text-[9px] text-t3 uppercase tracking-wider font-bold">Misi</p>
+            </div>
+            <div className="text-center">
+              <p className="font-black text-xl text-ok">{Math.round(progress.done.length / totalLessons * 100)}%</p>
+              <p className="text-[9px] text-t3 uppercase tracking-wider font-bold">Selesai</p>
+            </div>
+          </div>
+        </div>
       </div>
 
-      {/* Tools */}
+      {/* ── Learning path ── */}
+      <section className="mb-16 flex flex-col gap-8">
+        {CHAPTERS.map((ch, ci) => {
+          const open = isUnlocked(ci)
+          const doneCount = ch.lessons.filter(l => doneSet.has(l.id)).length
+          const prevCh = CHAPTERS[ci - 1]
+          const needMore = prevCh ? Math.ceil(prevCh.lessons.length * 0.6) - prevCh.lessons.filter(l => doneSet.has(l.id)).length : 0
+          return (
+            <div key={ch.id} className={open ? '' : 'opacity-60'}>
+              {/* Chapter header */}
+              <div className="flex items-center gap-3 mb-4">
+                <span className="text-2xl">{open ? ch.icon : '🔒'}</span>
+                <div className="flex-1 min-w-0">
+                  <h2 className="font-bold text-lg leading-tight">Bab {ci + 1} — {ch.title}</h2>
+                  <p className="text-t3 text-xs mt-0.5">{ch.desc}</p>
+                </div>
+                <span className={`text-[10px] font-mono font-bold flex-shrink-0 px-2.5 py-1 rounded-full border ${doneCount === ch.lessons.length ? 'text-ok border-ok/30 bg-ok/10' : 'text-t2 border-b1 bg-s2'}`}>
+                  {doneCount}/{ch.lessons.length}
+                </span>
+              </div>
+
+              {!open ? (
+                <div className="bg-s2 border border-dashed border-b2 rounded-2xl px-5 py-6 text-center">
+                  <p className="text-sm text-t3">
+                    🔒 Selesaikan <strong className="text-txt">{needMore} pelajaran lagi</strong> di Bab {ci} untuk membuka
+                  </p>
+                </div>
+              ) : (
+                <div className="flex flex-col gap-2">
+                  {ch.lessons.map((l, li) => {
+                    const done = doneSet.has(l.id)
+                    const missionDone = !!l.mission && progress.missions.includes(l.mission.flag)
+                    return (
+                      <button key={l.id} onClick={() => setActiveLesson(l)}
+                        className={`flex items-center gap-4 border rounded-xl p-4 text-left transition-all hover:-translate-y-0.5 ${done ? 'bg-ok/5 border-ok/25' : 'bg-s2 border-b1 hover:border-b3'}`}>
+                        <div className={`w-9 h-9 rounded-full flex items-center justify-center text-sm font-black flex-shrink-0 ${done ? 'bg-ok/20 text-ok' : 'bg-s4 text-t2'}`}>
+                          {done ? '✓' : li + 1}
+                        </div>
+                        <div className="flex-1 min-w-0">
+                          <p className="font-bold text-sm leading-tight">{l.title}</p>
+                          <p className="text-t3 text-xs mt-0.5 truncate">{l.sub} · ⏱ {l.mins} mnt</p>
+                        </div>
+                        <div className="flex items-center gap-2 flex-shrink-0">
+                          {l.mission && (
+                            <span className={`text-[9px] font-black px-2 py-1 rounded-full border ${missionDone ? 'text-ok border-ok/30 bg-ok/10' : 'text-a2 border-a2/30 bg-a2/10'}`}>
+                              {missionDone ? '🎯 ✓' : '🎯 MISI'}
+                            </span>
+                          )}
+                          <span className={`text-[10px] font-mono font-bold ${done ? 'text-ok' : 'text-t3'}`}>
+                            {done ? '+' + LESSON_XP : LESSON_XP + ' XP'}
+                          </span>
+                        </div>
+                      </button>
+                    )
+                  })}
+                </div>
+              )}
+            </div>
+          )
+        })}
+      </section>
+
+      {/* ── Quick tools ── */}
       <section id="tools" className="mb-16">
         <h2 className="font-bold text-xl mb-5">🛠 Alat Cepat</h2>
         <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-4 gap-3">
@@ -71,60 +337,48 @@ export default function LearnPage() {
         )}
       </section>
 
-      {/* Lessons */}
-      <section id="learn">
-        <h2 className="font-bold text-xl mb-5">📚 Panduan Pemula</h2>
-        <div className="flex flex-col gap-3">
-          {LESSONS.map(l => (
-            <button key={l.id} onClick={() => setActiveLesson(l)}
-              className={`flex items-center gap-4 bg-s2 border rounded-xl p-4 text-left hover:border-b3 transition-all ${done.has(l.id) ? 'border-ok/30 bg-ok/5' : 'border-b1'}`}>
-              <div className={`w-8 h-8 rounded-full flex items-center justify-center text-sm font-black flex-shrink-0 ${done.has(l.id) ? 'bg-ok/20 text-ok' : 'bg-s4 text-t2'}`}>
-                {done.has(l.id) ? '✓' : l.id}
-              </div>
-              <div className="flex-1">
-                <p className="font-bold text-sm">{l.title}</p>
-                <p className="text-t2 text-xs">{l.sub}</p>
-              </div>
-              <span className={`text-[9px] font-black tracking-widest uppercase px-2 py-1 rounded border ${l.color}`}>{l.tag}</span>
-            </button>
-          ))}
-        </div>
-      </section>
-
       {/* Lesson Modal */}
       {activeLesson && (
-        <div className="fixed inset-0 bg-black/80 backdrop-blur-sm z-50 flex items-center justify-center p-4 animate-fade-in"
-          onClick={e => e.target === e.currentTarget && setActiveLesson(null)}>
-          <div className="bg-s2 border border-b2 rounded-2xl max-w-lg w-full max-h-[80vh] overflow-y-auto">
-            <div className="flex items-center justify-between p-5 border-b border-b1">
-              <h2 className="font-bold text-lg">{activeLesson.title}</h2>
-              <button onClick={() => setActiveLesson(null)} className="text-t2 hover:text-txt text-xl">✕</button>
-            </div>
-            <div className="p-5 text-sm text-t2 leading-relaxed prose prose-invert prose-sm max-w-none"
-              dangerouslySetInnerHTML={{ __html: activeLesson.body
-                .replace(/<h3>/g, '<h3 class="text-txt font-bold text-sm mt-4 mb-2 first:mt-0">')
-                .replace(/<ul>/g, '<ul class="list-disc pl-4 mb-3 space-y-1">')
-                .replace(/<ol>/g, '<ol class="list-decimal pl-4 mb-3 space-y-1">')
-                .replace(/<div class="tip">/g, '<div class="bg-accent/10 border border-accent/20 rounded-xl p-3 my-3 text-accent text-xs">')
-                .replace(/<strong>/g, '<strong class="text-txt">')
-              }} />
-            <div className="flex gap-2 p-5 border-t border-b1">
-              <button onClick={() => setActiveLesson(null)} className="px-4 py-2 bg-s4 border border-b2 rounded-xl text-xs font-bold text-t2 hover:text-txt transition-colors">Tutup</button>
-              {!done.has(activeLesson.id) && (
-                <button onClick={() => { setDone(d => new Set([...d, activeLesson.id])); setActiveLesson(null) }}
-                  className="px-4 py-2 bg-accent text-white rounded-xl text-xs font-bold hover:bg-orange-400 transition-colors">
-                  ✓ Tandai Selesai
-                </button>
-              )}
-            </div>
-          </div>
-        </div>
+        <LessonModal
+          key={activeLesson.id}
+          lesson={activeLesson}
+          isDone={doneSet.has(activeLesson.id)}
+          missionDone={!!activeLesson.mission && progress.missions.includes(activeLesson.mission.flag)}
+          onClose={() => setActiveLesson(null)}
+          onComplete={completeLesson}
+          onManualMission={manualMission}
+        />
       )}
     </div>
   )
 }
 
-// ── Tool Components ────────────────────────────────────────────────────────
+// ── Quick tools (unchanged) ───────────────────────────────────────────────────
+const TOOLS = [
+  { id: 'grainGen',  icon: '🎞', title: 'Film Grain Generator', badge: 'NEW', color: 'text-accent' },
+  { id: 'frameCalc', icon: '⏱', title: 'Frame Rate Calc', badge: 'CALC', color: 'text-a2' },
+  { id: 'colorTemp', icon: '🌡', title: 'Color Temp Chart', badge: 'REF', color: 'text-warn' },
+  { id: 'logGuide',  icon: '📊', title: 'Log Exposure Guide', badge: 'GUIDE', color: 'text-accent' },
+  { id: 'storage',   icon: '💾', title: 'Storage Calculator', badge: 'CALC', color: 'text-a2' },
+  { id: 'aspect',    icon: '📐', title: 'Aspect Ratio Guide', badge: 'REF', color: 'text-a3' },
+  { id: 'shortcuts', icon: '⌨️', title: 'Premiere Shortcuts', badge: 'CHEAT', color: 'text-a4' },
+  { id: 'shotMatch', icon: '🎨', title: 'Shot Match Tips', badge: 'TIPS', color: 'text-ok' },
+  { id: 'export',    icon: '🚀', title: 'Export Settings', badge: 'GUIDE', color: 'text-accent' },
+]
+
+// Lazy factories so each click mounts a fresh component instance
+const TOOL_CONTENT: Record<string, () => JSX.Element> = {
+  grainGen:  () => <GrainGen />,
+  frameCalc: () => <FrameCalc />,
+  colorTemp: () => <ColorTempChart />,
+  logGuide:  () => <LogGuide />,
+  storage:   () => <StorageCalc />,
+  shortcuts: () => <ShortcutsSheet />,
+  aspect:    () => <AspectGuide />,
+  shotMatch: () => <ShotMatchTips />,
+  export:    () => <ExportGuide />,
+}
+
 function FrameCalc() {
   const [fps, setFps] = useState('30')
   const [dur, setDur] = useState(60)

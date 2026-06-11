@@ -252,6 +252,7 @@ export default function MatcherPage() {
     a.href = URL.createObjectURL(new Blob([makeCube(lut, 33)]))
     a.download = `${sanitize(shot.name)}_HALEA_Match.cube`
     a.click()
+    try { localStorage.setItem('halea_m_matcher', '1') } catch {}   // HALEA Academy mission
     toast('✓ ' + shot.name + ' — LUT downloaded')
   }
 
