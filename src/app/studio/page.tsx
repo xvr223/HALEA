@@ -154,6 +154,51 @@ const makeCubeContent = (lut:Float32Array, size:number) => {
 
 type MobileTab = 'setup' | 'preview' | 'export'
 
+// ── Fine-Tune trim sliders ────────────────────────────────────────────────────
+const TRIM_DEFS: { key:string; label:string; range:number; lo:string; hi:string }[] = [
+  { key:'temp',  label:'Temperature', range:0.4,  lo:'Cool',  hi:'Warm' },
+  { key:'tint',  label:'Tint',        range:0.3,  lo:'Green', hi:'Magenta' },
+  { key:'gamma', label:'Exposure',    range:0.4,  lo:'Gelap', hi:'Terang' },
+  { key:'con',   label:'Contrast',    range:0.5,  lo:'Flat',  hi:'Punchy' },
+  { key:'sat',   label:'Saturation',  range:0.6,  lo:'Muted', hi:'Vivid' },
+  { key:'lift',  label:'Shadows',     range:0.25, lo:'Crush', hi:'Lift' },
+]
+const ZERO_TRIM = { lift:0, gamma:0, temp:0, tint:0, con:0, sat:0 }
+
+function TrimSlider({ def, value, onChange }:{ def:typeof TRIM_DEFS[number]; value:number; onChange:(v:number)=>void }) {
+  const pct = Math.round((value/def.range)*100)
+  return (
+    <div>
+      <div className="flex justify-between items-center mb-0.5">
+        <span className="text-[10px] font-bold text-t2">{def.label}</span>
+        <span className={`text-[10px] font-mono font-bold ${pct!==0?'text-accent':'text-t3'}`}>{pct>0?'+':''}{pct}</span>
+      </div>
+      <input type="range" min={-100} max={100} value={pct}
+        onChange={e=>onChange(+e.target.value/100*def.range)} className="w-full"/>
+      <div className="flex justify-between text-[8px] text-t3"><span>{def.lo}</span><span>{def.hi}</span></div>
+    </div>
+  )
+}
+
+function TrimPanel({ values, onChange, onReset, dirty }:{
+  values: Record<string,number>
+  onChange: (key:string, v:number)=>void
+  onReset: ()=>void
+  dirty: boolean
+}) {
+  return (
+    <div className="flex flex-col gap-2.5">
+      {TRIM_DEFS.map(d=>(
+        <TrimSlider key={d.key} def={d} value={values[d.key]??0} onChange={v=>onChange(d.key, v)}/>
+      ))}
+      {dirty&&(
+        <button onClick={onReset}
+          className="self-end text-[10px] font-bold text-t3 hover:text-err transition-colors">↺ Reset trim</button>
+      )}
+    </div>
+  )
+}
+
 // Hoisted so the range input keeps identity across renders (drag stays alive)
 function StrengthSlider({ value, onChange }:{ value:number; onChange:(v:number)=>void }) {
   return (
@@ -198,8 +243,25 @@ export default function StudioPage() {
   )
   const logLabel = LOG_PROFILES.find(p => p.id === logProfile)?.label || logProfile
 
+  const [trimOpen,       setTrimOpen]       = useState(true)
+  const [mobileTrimOpen, setMobileTrimOpen] = useState(false)
+
   const splitRef = useRef<HTMLDivElement>(null)
   const rafRef   = useRef<number|null>(null)
+  const nodesRef = useRef<GradeNode[]>([])
+  const trimBase = useRef<Record<string, number>>({ ...ZERO_TRIM })
+
+  useEffect(() => { nodesRef.current = nodes }, [nodes])
+
+  // Fine-tune: sliders edit the primary node (smart = trim layer, basic = analyzed values)
+  const trimNode  = nodes.find(n=>n.type==='primary')
+  const trimVals  = (trimNode?.params || {}) as Record<string, number>
+  const trimDirty = !!trimNode && TRIM_DEFS.some(d=>Math.abs((trimVals[d.key]??0)-(trimBase.current[d.key]??0))>0.004)
+
+  const setTrim = (key:string, v:number) =>
+    setNodes(prev=>prev.map(n=>n.type==='primary'?{...n,params:{...n.params,[key]:v}}:n))
+  const resetTrim = () =>
+    setNodes(prev=>prev.map(n=>n.type==='primary'?{...n,params:{...trimBase.current}}:n))
 
   useEffect(() => {
     if (afterSrc && typeof window !== 'undefined' && window.innerWidth < 768) setMobileTab('preview')
@@ -248,6 +310,10 @@ export default function StudioPage() {
           desc:m.toneDesc, matched:true, toneDesc:m.toneDesc,
           shadowCast:m.shadowCast, highCast:m.highCast, satRatio:m.satRatio,
         })
+        // keep user's manual trim when re-matching smart → smart (footage swap, log change)
+        const prevWasSmart = nodesRef.current.some(n=>n.type==='match')
+        const prevTrim = prevWasSmart ? nodesRef.current.find(n=>n.type==='primary')?.params : undefined
+        trimBase.current = { ...ZERO_TRIM }
         setNodes([
           { id:mkId(), type:'match', enabled:true, params:{
               m0:m.matrix[0], m1:m.matrix[1], m2:m.matrix[2],
@@ -257,6 +323,7 @@ export default function StudioPage() {
               rL:m.muR[0], ra:m.muR[1], rb:m.muR[2],
               curve:Array.from(m.curve).map(v=>v.toFixed(5)).join(','),
               amount:matchAmount } },
+          { id:mkId(), type:'primary', enabled:true, params:{ ...ZERO_TRIM, ...(prevTrim||{}) } },
           { id:mkId(), type:'halation', enabled:m.halation>0.05, params:{ threshold:0.65, intensity:m.halation } },
         ])
         toast('✦ Smart Match — footage dipetakan ke referensi')
@@ -264,6 +331,8 @@ export default function StudioPage() {
         // ── BASIC fallback: reference-only heuristic ──
         const g = analyzeColorProfile(refData)
         setGrade({ ...g, matched:false })
+        // sliders start at the analyzed values — reset returns here
+        trimBase.current = { lift:g.lift, gamma:g.gamma, temp:g.temp, tint:g.tint, con:g.con, sat:g.sat }
         setNodes([
           { id:mkId(), type:'primary',  enabled:true, params:{ lift:g.lift, gamma:g.gamma, temp:g.temp, tint:g.tint, con:g.con, sat:g.sat } },
           { id:mkId(), type:'look',     enabled:g.look!=='natural'&&g.lookAmount>0.1, params:{ look:g.look, amount:g.lookAmount } },
@@ -298,7 +367,14 @@ export default function StudioPage() {
   const importHaleaCode = () => {
     const res = decodeGrade(codeInput)
     if (!res) { toast('Kode tidak valid — cek lagi', 'err'); return }
-    setNodes(res.nodes.map(n => ({ ...n, id: mkId() })))
+    const newNodes: GradeNode[] = res.nodes.map(n => ({ ...n, id: mkId() }))
+    // older codes (pre fine-tune) have no primary — add one so sliders work
+    if (newNodes.some(n=>n.type==='match') && !newNodes.some(n=>n.type==='primary')) {
+      newNodes.splice(1, 0, { id:mkId(), type:'primary', enabled:true, params:{ ...ZERO_TRIM } })
+    }
+    setNodes(newNodes)
+    // reset returns to the look as shipped (incl. creator's trim)
+    trimBase.current = { ...ZERO_TRIM, ...((newNodes.find(n=>n.type==='primary')?.params || {}) as Record<string,number>) }
     const matchN = res.nodes.find(n=>n.type==='match')
     const primN  = res.nodes.find(n=>n.type==='primary')
     const lookN  = res.nodes.find(n=>n.type==='look')
@@ -412,13 +488,17 @@ export default function StudioPage() {
     // reads from grade (not the primary node) so it works in Smart Match mode too,
     // where nodes carry a matrix instead of classic slider params
     if (!grade) { toast('Match Colors dulu', 'warn'); return }
-    const temp    = Math.round(6500 + grade.temp*3500)   // Kelvin 3000–10000
-    const tint    = Math.round(-grade.tint*150)           // LR tint –150…+150
-    const expo    = (grade.gamma*1.5).toFixed(2)           // Exposure –5…+5
-    const con     = Math.round(grade.con*100)              // Contrast –100…+100
-    const shadows = Math.round(grade.lift*60)              // Shadows (lift = open shadows)
-    const blacks  = Math.round(grade.lift*400)             // Blacks (lift = raise black floor)
-    const sat     = Math.round(grade.sat*100)              // Saturation –100…+100
+    // smart mode: derived match params + manual trim on top; basic mode: the
+    // primary node already holds analyzed values + user edits
+    const trim = nodes.find(n=>n.type==='primary')?.params as Record<string,number>|undefined
+    const tv = (k:string, gv:number) => grade.matched ? gv + (trim?.[k]||0) : (trim?.[k] ?? gv)
+    const temp    = Math.round(6500 + tv('temp',grade.temp)*3500)   // Kelvin 3000–10000
+    const tint    = Math.round(-tv('tint',grade.tint)*150)           // LR tint –150…+150
+    const expo    = (tv('gamma',grade.gamma)*1.5).toFixed(2)          // Exposure –5…+5
+    const con     = Math.round(tv('con',grade.con)*100)               // Contrast –100…+100
+    const shadows = Math.round(tv('lift',grade.lift)*60)              // Shadows (lift = open shadows)
+    const blacks  = Math.round(tv('lift',grade.lift)*400)             // Blacks (lift = raise black floor)
+    const sat     = Math.round(tv('sat',grade.sat)*100)               // Saturation –100…+100
     const name    = lutName||'HALEA_Preset'
     const xmp = `<?xpacket begin="" id="W5M0MpCehiHzreSzNTczkc9d"?>
 <x:xmpmeta xmlns:x="adobe:ns:meta/">
@@ -592,6 +672,22 @@ export default function StudioPage() {
             </div>
           )}
           {grade?.matched&&<StrengthSlider value={matchAmount} onChange={handleStrength}/>}
+          {/* Fine-Tune */}
+          {trimNode&&(
+            <div>
+              <button onClick={()=>setTrimOpen(v=>!v)} className="w-full flex items-center gap-2 mb-2">
+                <span className="text-[9px] font-black tracking-widest uppercase text-warn">🎛 Fine-Tune</span>
+                {trimDirty&&<span className="w-1.5 h-1.5 rounded-full bg-warn"/>}
+                <div className="flex-1 h-px bg-b1"/>
+                <span className="text-t3 text-xs leading-none">{trimOpen?'−':'+'}</span>
+              </button>
+              {trimOpen&&(
+                <div className="bg-s2 border border-b1 rounded-xl p-3">
+                  <TrimPanel values={trimVals} onChange={setTrim} onReset={resetTrim} dirty={trimDirty}/>
+                </div>
+              )}
+            </div>
+          )}
           <div>
             <div className="flex items-center gap-2 mb-3"><span className="text-[9px] font-black tracking-widest uppercase text-accent">② Footage Still</span><div className="flex-1 h-px bg-b1"/></div>
             <p className="text-[10px] text-t3 mb-2 leading-relaxed">Frame dari footage kamu untuk preview before/after.</p>
@@ -847,6 +943,18 @@ export default function StudioPage() {
             {/* Match Strength (Smart Match only) */}
             {grade?.matched&&<StrengthSlider value={matchAmount} onChange={handleStrength}/>}
 
+            {/* Fine-Tune */}
+            {trimNode&&(
+              <div className="bg-s2 border border-warn/20 rounded-2xl p-4">
+                <div className="flex items-center gap-2 mb-3">
+                  <p className="text-[9px] font-black tracking-widest uppercase text-warn">🎛 Fine-Tune</p>
+                  {trimDirty&&<span className="w-1.5 h-1.5 rounded-full bg-warn"/>}
+                  <span className="ml-auto text-[9px] text-t3">live di Preview</span>
+                </div>
+                <TrimPanel values={trimVals} onChange={setTrim} onReset={resetTrim} dirty={trimDirty}/>
+              </div>
+            )}
+
             {/* Grade result */}
             {grade&&(
               <div className="bg-s2 border border-b1 rounded-2xl overflow-hidden shadow-lg">
@@ -978,6 +1086,26 @@ export default function StudioPage() {
                     {baking?<span className="w-3.5 h-3.5 border-2 border-white/30 border-t-white rounded-full animate-spin"/>:<Zap size={13}/>}
                     Bake LUT
                   </button>
+                </div>
+              )}
+              {/* Fine-tune: floating button + bottom sheet */}
+              {trimNode&&!mobileTrimOpen&&(
+                <button onClick={()=>setMobileTrimOpen(true)}
+                  className="absolute bottom-6 left-4 z-30 px-4 py-2.5 bg-black/70 backdrop-blur-sm border border-white/15 rounded-full text-white text-xs font-bold flex items-center gap-1.5 active:scale-[0.95] transition-transform">
+                  🎛 Tune{trimDirty&&<span className="w-1.5 h-1.5 rounded-full bg-warn"/>}
+                </button>
+              )}
+              {mobileTrimOpen&&(
+                <div className="absolute inset-x-0 bottom-0 z-40 glass border-t border-b1 rounded-t-3xl p-5 overflow-y-auto"
+                  style={{maxHeight:'60%'}}>
+                  <div className="flex items-center justify-between mb-4">
+                    <p className="text-[10px] font-black tracking-widest uppercase text-warn">🎛 Fine-Tune</p>
+                    <button onClick={()=>setMobileTrimOpen(false)}
+                      className="px-3.5 py-1.5 bg-s3 border border-b2 rounded-full text-xs font-bold text-t2 active:scale-[0.95] transition-transform">
+                      Tutup ✓
+                    </button>
+                  </div>
+                  <TrimPanel values={trimVals} onChange={setTrim} onReset={resetTrim} dirty={trimDirty}/>
                 </div>
               )}
             </>
