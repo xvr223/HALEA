@@ -44,6 +44,7 @@ interface GradeResult {
   sat:number; lift:number; halation:number
   look:string; lookAmount:number; desc:string
   matched?:boolean; toneDesc?:string; shadowCast?:string; highCast?:string; satRatio?:number
+  confidence?:number; notes?:string[]
 }
 
 function analyzeColorProfile(imageData: ImageData): GradeResult {
@@ -316,7 +317,11 @@ export default function StudioPage() {
           halation:m.halation, look:'smart', lookAmount:0,
           desc:m.toneDesc, matched:true, toneDesc:m.toneDesc,
           shadowCast:m.shadowCast, highCast:m.highCast, satRatio:m.satRatio,
+          confidence:m.confidence, notes:m.notes,
         })
+        // zone matrix (24 cells × hue/sat/luma) untuk preview & bake full-quality
+        const zp: Record<string, number> = {}
+        for (let i=0;i<24;i++){ zp['zh'+i]=m.zoneH[i]; zp['zs'+i]=m.zoneS[i]; zp['zl'+i]=m.zoneL[i] }
         // keep user's manual trim when re-matching smart → smart (footage swap, log change)
         const prevWasSmart = nodesRef.current.some(n=>n.type==='match')
         const prevTrim = prevWasSmart ? nodesRef.current.find(n=>n.type==='primary')?.params : undefined
@@ -337,11 +342,12 @@ export default function StudioPage() {
               bl0:m.bandL[0], bl1:m.bandL[1], bl2:m.bandL[2], bl3:m.bandL[3],
               bl4:m.bandL[4], bl5:m.bandL[5], bl6:m.bandL[6], bl7:m.bandL[7],
               skh:m.skinH, sks:m.skinS, skl:m.skinL, skw:m.skinW, skp:m.skinP,
+              ...zp,
               amount:matchAmount } },
           { id:mkId(), type:'primary', enabled:true, params:{ ...ZERO_TRIM, ...(prevTrim||{}) } },
           { id:mkId(), type:'halation', enabled:m.halation>0.05, params:{ threshold:0.65, intensity:m.halation } },
         ])
-        toast('✦ Smart Match — footage dipetakan ke referensi')
+        toast(`✦ Smart Match ${m.confidence}% — footage dipetakan ke referensi`)
       } else {
         // ── BASIC fallback: reference-only heuristic ──
         const g = analyzeColorProfile(refData)
@@ -588,7 +594,7 @@ export default function StudioPage() {
   }
 
   const gradeStats = grade ? (grade.matched ? [
-    { label:'Mode',    val:'Smart ✦' },
+    { label:'Match',   val:grade.confidence ? `${grade.confidence}% ✦` : 'Smart ✦' },
     { label:'Shadows', val:grade.shadowCast||'—' },
     { label:'Highs',   val:grade.highCast||'—' },
     { label:'Sat',     val:'×'+(grade.satRatio??1).toFixed(2) },
@@ -689,7 +695,14 @@ export default function StudioPage() {
                   <span className="text-[10px] font-mono font-bold text-accent capitalize">{val}</span>
                 </div>
               ))}
-              <div className="px-3 py-2"><button onClick={handleAnalyze} disabled={analyzing} className="text-[9px] font-bold text-t3 hover:text-accent transition-colors disabled:opacity-40">↻ Re-analyze</button></div>
+              {grade.notes&&grade.notes.length>0&&(
+                <div className="px-3 py-2 border-t border-b1 flex flex-col gap-1">
+                  {grade.notes.map((n,i)=>(
+                    <p key={i} className="text-[9px] text-t3 leading-relaxed">💡 {n}</p>
+                  ))}
+                </div>
+              )}
+              <div className="px-3 py-2 border-t border-b1"><button onClick={handleAnalyze} disabled={analyzing} className="text-[9px] font-bold text-t3 hover:text-accent transition-colors disabled:opacity-40">↻ Re-analyze</button></div>
             </div>
           )}
           {grade?.matched&&<StrengthSlider value={matchAmount} onChange={handleStrength}/>}
@@ -1012,6 +1025,13 @@ export default function StudioPage() {
                     </div>
                   ))}
                 </div>
+                {grade.notes&&grade.notes.length>0&&(
+                  <div className="px-4 py-2.5 border-t border-b1 flex flex-col gap-1.5">
+                    {grade.notes.map((n,i)=>(
+                      <p key={i} className="text-[10px] text-t3 leading-relaxed">💡 {n}</p>
+                    ))}
+                  </div>
+                )}
                 <div className="px-4 py-2.5 border-t border-b1 flex justify-between items-center">
                   <button onClick={handleAnalyze} disabled={analyzing} className="text-[10px] font-bold text-t3 hover:text-accent transition-colors">↻ Re-analyze</button>
                   {footImg&&<button onClick={()=>setMobileTab('preview')} className="text-[10px] font-bold text-accent">Lihat Preview →</button>}

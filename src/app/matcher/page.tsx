@@ -119,7 +119,7 @@ function ShotCard({
         {shot.afterSrc && (
           <>
             <span className={`absolute top-2 left-2 text-[9px] font-black tracking-widest px-2 py-0.5 rounded-full backdrop-blur-sm ${hold ? 'bg-black/60 text-white/80' : 'bg-ok/20 text-ok'}`}>
-              {hold ? 'BEFORE' : '✓ MATCHED'}
+              {hold ? 'BEFORE' : shot.match ? `✓ ${shot.match.confidence}%` : '✓ MATCHED'}
             </span>
             <button
               className="absolute bottom-2 right-2 text-[9px] font-bold text-white/90 bg-black/60 px-2.5 py-1.5 rounded-full backdrop-blur-sm active:bg-black/80 touch-none"
