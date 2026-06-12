@@ -4,7 +4,11 @@ import Link from 'next/link'
 import { useRouter } from 'next/navigation'
 import { useAuthStore } from '@/store/auth'
 import { toast } from '@/components/ui'
+import { copyText } from '@/lib/haleaCode'
+import { CERT_TIERS, tierEligible, encodeCert, todayCertDay, certDateString, drawCertificate } from '@/lib/cert'
 import { CHAPTERS, RANKS, LESSON_XP, MISSION_XP, Lesson } from './curriculum'
+
+interface IssuedCert { tier: string; name: string; day: number; code: string }
 
 // ── Progress store (localStorage, per akun) ───────────────────────────────────
 interface Progress { done: string[]; xp: number; missions: string[] }
@@ -160,6 +164,38 @@ export default function LearnPage() {
   const { user: authUser } = useAuthStore()
   const storeKey = authUser ? `halea_learn_${authUser.id}` : 'halea_learn_guest'
 
+  // ── Certificates ──
+  const [certs, setCerts] = useState<IssuedCert[]>([])
+  const [certName, setCertName] = useState('')
+  useEffect(() => {
+    setCertName(authUser?.name || '')
+    if (!authUser) { setCerts([]); return }
+    try { setCerts(JSON.parse(localStorage.getItem('halea_certs_' + authUser.id) || '[]')) } catch { setCerts([]) }
+  }, [authUser])
+
+  const downloadCert = (entry: IssuedCert) => {
+    const tier = CERT_TIERS.find(t => t.id === entry.tier)
+    if (!tier) return
+    const c = document.createElement('canvas')
+    drawCertificate(c, { name: entry.name, title: tier.title, dateStr: certDateString(entry.day), code: entry.code })
+    const a = document.createElement('a')
+    a.href = c.toDataURL('image/png')
+    a.download = `HALEA_Certificate_${tier.id}_${entry.name.replace(/\s+/g, '_')}.png`
+    a.click()
+  }
+
+  const claimCert = (tierId: string) => {
+    if (!authUser) { router.push('/login?next=/learn'); return }
+    const name = certName.trim() || authUser.name
+    const day = todayCertDay()
+    const entry: IssuedCert = { tier: tierId, name, day, code: encodeCert(name, tierId, day) }
+    const next = [...certs.filter(c => c.tier !== tierId), entry]
+    setCerts(next)
+    try { localStorage.setItem('halea_certs_' + authUser.id, JSON.stringify(next)) } catch {}
+    downloadCert(entry)
+    toast('🎓 Sertifikat diterbitkan & didownload!')
+  }
+
   const doneSet = new Set(progress.done)
   const totalLessons = CHAPTERS.reduce((s, c) => s + c.lessons.length, 0)
   const rank = rankFor(progress.xp)
@@ -283,6 +319,17 @@ export default function LearnPage() {
             </div>
           </div>
         </div>
+
+        {/* Gym banner */}
+        <Link href="/gym"
+          className="mt-4 flex items-center gap-4 bg-gradient-to-r from-accent/15 to-warn/10 border border-accent/25 rounded-2xl px-5 py-4 hover:border-accent/50 hover:-translate-y-0.5 transition-all group">
+          <span className="text-3xl">🏋️</span>
+          <div className="flex-1 min-w-0">
+            <p className="font-bold text-sm group-hover:text-accent transition-colors">Grading Gym — challenge harian</p>
+            <p className="text-t3 text-[11px] mt-0.5">Tiru target look, engine yang kasih skor. +30 XP per hari + streak 🔥</p>
+          </div>
+          <span className="text-accent text-sm font-bold flex-shrink-0">Main →</span>
+        </Link>
       </div>
 
       {/* ── Learning path ── */}
@@ -345,6 +392,74 @@ export default function LearnPage() {
             </div>
           )
         })}
+      </section>
+
+      {/* ── Certificates ── */}
+      <section id="sertifikat" className="mb-16">
+        <div className="flex items-center gap-3 mb-2">
+          <h2 className="font-bold text-xl">📜 Sertifikat HALEA Academy</h2>
+        </div>
+        <p className="text-t3 text-xs mb-5 max-w-lg leading-relaxed">
+          Selesaikan kurikulum, klaim sertifikat bernama dengan kode verifikasi — pajang di CV, LinkedIn,
+          atau bio. Keasliannya bisa dicek siapa saja di <Link href="/verify" className="text-accent font-bold hover:underline">halea.vercel.app/verify</Link>.
+        </p>
+
+        {authUser && (
+          <div className="mb-4 max-w-sm">
+            <label className="text-[9px] font-black tracking-widest uppercase text-t3 block mb-1.5">Nama di sertifikat</label>
+            <input value={certName} onChange={e => setCertName(e.target.value)}
+              className="w-full bg-s2 border border-b1 text-txt px-3 py-2.5 rounded-xl text-sm outline-none focus:border-accent transition-colors" />
+          </div>
+        )}
+
+        <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
+          {CERT_TIERS.map(tier => {
+            const elig = tierEligible(tier.id, doneSet, progress.missions.length)
+            const issued = certs.find(c => c.tier === tier.id)
+            const pct = Math.round(elig.have / elig.need * 100)
+            return (
+              <div key={tier.id}
+                className={`rounded-2xl border p-5 flex flex-col ${issued ? 'bg-ok/5 border-ok/30' : elig.ok ? 'bg-accent/5 border-accent/40' : 'bg-s2 border-b1'}`}>
+                <div className="flex items-center gap-3 mb-3">
+                  <span className="text-3xl">{tier.icon}</span>
+                  <div className="min-w-0">
+                    <p className="font-bold text-sm leading-tight">{tier.label}</p>
+                    <p className="text-[10px] text-t3 mt-0.5">{tier.req}</p>
+                  </div>
+                </div>
+
+                {issued ? (
+                  <>
+                    <p className="text-[11px] text-ok font-bold mb-1">✓ Diterbitkan untuk {issued.name}</p>
+                    <p className="text-[10px] text-t3 mb-3">{certDateString(issued.day)}</p>
+                    <div className="mt-auto flex gap-2">
+                      <button onClick={() => downloadCert(issued)}
+                        className="flex-1 py-2 rounded-lg text-[10px] font-bold bg-ok/10 border border-ok/30 text-ok hover:bg-ok/20 transition-colors">
+                        ⬇ Download
+                      </button>
+                      <button onClick={async () => { if (await copyText(issued.code)) toast('✓ Kode verifikasi disalin') }}
+                        className="flex-1 py-2 rounded-lg text-[10px] font-bold bg-s3 border border-b2 text-t2 hover:border-b3 transition-colors">
+                        📋 Salin Kode
+                      </button>
+                    </div>
+                  </>
+                ) : elig.ok ? (
+                  <button onClick={() => claimCert(tier.id)}
+                    className="mt-auto w-full py-2.5 rounded-xl text-xs font-black bg-accent text-white hover:bg-orange-400 transition-colors shadow-lg shadow-accent/20">
+                    🎓 Klaim & Download
+                  </button>
+                ) : (
+                  <div className="mt-auto">
+                    <div className="h-1.5 bg-s4 rounded-full overflow-hidden mb-1.5">
+                      <div className="h-full bg-accent/60 rounded-full transition-all" style={{ width: pct + '%' }} />
+                    </div>
+                    <p className="text-[10px] text-t3">{elig.have}/{elig.need} · {pct}%</p>
+                  </div>
+                )}
+              </div>
+            )
+          })}
+        </div>
       </section>
 
       {/* ── Quick tools ── */}
