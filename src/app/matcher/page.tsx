@@ -59,7 +59,7 @@ function renderAfter(imgData: ImageData, m: SmartMatchResult, amount: number): s
 }
 
 const makeCube = (lut: Float32Array, size: number) => {
-  let s = `# HALEA Shot Matcher — by @robbiesatriaa\nLUT_3D_SIZE ${size}\nDOMAIN_MIN 0.0 0.0 0.0\nDOMAIN_MAX 1.0 1.0 1.0\n\n`
+  let s = `# HALEA Shot Matcher — by @haleastudio\nLUT_3D_SIZE ${size}\nDOMAIN_MIN 0.0 0.0 0.0\nDOMAIN_MAX 1.0 1.0 1.0\n\n`
   for (let i = 0; i < lut.length; i += 3) s += `${lut[i].toFixed(6)} ${lut[i + 1].toFixed(6)} ${lut[i + 2].toFixed(6)}\n`
   return s
 }

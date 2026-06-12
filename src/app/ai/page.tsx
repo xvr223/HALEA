@@ -7,7 +7,7 @@ import { useSettingsStore } from '@/store/settings'
 import { toast } from '@/components/ui'
 import { Send, Trash2, Sparkles } from 'lucide-react'
 
-const SYSTEM = `Kamu adalah HALEA AI — asisten khusus color grading & video editing, dibuat untuk HALEA by @robbiesatriaa.
+const SYSTEM = `Kamu adalah HALEA AI — asisten khusus color grading & video editing, dibuat untuk HALEA by @haleastudio.
 
 Keahlian:
 - Color grading: LUT, log formats, tone curves, color theory, shot matching

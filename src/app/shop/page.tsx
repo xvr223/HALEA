@@ -57,7 +57,7 @@ export default function ShopPage() {
           Premium <span className="italic text-accent">LUTs</span> &amp; Presets
         </h1>
         <p className="text-t2 max-w-md mx-auto text-sm leading-relaxed">
-          Look sinematik karya @robbiesatriaa. Gratis & berbayar. Kompatibel dengan Premiere, Resolve, AE, FCPX.
+          Look sinematik karya @haleastudio. Gratis & berbayar. Kompatibel dengan Premiere, Resolve, AE, FCPX.
         </p>
 
         {/* Credit badge */}
@@ -97,7 +97,7 @@ export default function ShopPage() {
                 <p className="text-[10px] text-t3 uppercase tracking-widest font-bold mb-4">kredit AI</p>
                 <p className="font-bold text-xl mb-1">{rp(p.price)}</p>
                 <p className="text-[10px] text-t3 mb-5">{rp(perCredit)}/kredit{disc > 0 ? ` · hemat ${disc}%` : ''}</p>
-                <a href="https://instagram.com/robbiesatriaa" target="_blank"
+                <a href="https://instagram.com/haleastudio" target="_blank"
                   className={`mt-auto block px-4 py-3 rounded-xl text-xs font-bold transition-colors ${p.tag ? 'bg-accent text-white hover:bg-orange-400' : 'bg-s4 border border-b2 text-txt hover:border-b3'}`}>
                   Beli via DM →
                 </a>
@@ -182,7 +182,7 @@ export default function ShopPage() {
                     <button onClick={handleRedeem} className="flex-1 px-4 py-2.5 bg-s4 border border-b2 text-xs font-bold rounded-xl hover:border-b3 transition-colors">
                       🎫 Redeem Kode
                     </button>
-                    <a href="https://instagram.com/robbiesatriaa" target="_blank"
+                    <a href="https://instagram.com/haleastudio" target="_blank"
                       className="flex-1 px-4 py-2.5 bg-a4 text-black text-xs font-bold rounded-xl text-center hover:bg-purple-300 transition-colors">
                       Beli via DM
                     </a>
@@ -193,9 +193,9 @@ export default function ShopPage() {
                   ⬇ Unduh Gratis
                 </Btn>
               ) : (
-                <a href="https://instagram.com/robbiesatriaa" target="_blank"
+                <a href="https://instagram.com/haleastudio" target="_blank"
                   className="block text-center px-6 py-3 bg-accent text-white text-sm font-bold rounded-xl hover:bg-orange-400 transition-colors">
-                  Hubungi untuk Beli — @robbiesatriaa
+                  Hubungi untuk Beli — @haleastudio
                 </a>
               )}
               <button onClick={() => setSelected(null)} className="w-full mt-3 text-t3 text-xs hover:text-txt transition-colors">Tutup</button>

@@ -63,10 +63,10 @@ export function Navbar() {
 
         {/* Right side */}
         <div className="hidden md:flex items-center gap-3">
-          <a href="https://instagram.com/robbiesatriaa" target="_blank"
+          <a href="https://instagram.com/haleastudio" target="_blank"
             className="flex items-center gap-1.5 text-t3 hover:text-accent text-xs font-mono transition-colors">
             <Instagram size={13} />
-            @robbiesatriaa
+            @haleastudio
           </a>
 
           {user ? (

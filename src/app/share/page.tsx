@@ -92,7 +92,7 @@ export default function SharePage() {
   const [beforeSrc,  setBeforeSrc]  = useState<string | null>(null)
   const [afterSrc,   setAfterSrc]   = useState<string | null>(null)
   const [format,     setFormat]     = useState<Fmt>('square')
-  const [handle,     setHandle]     = useState('@robbiesatriaa')
+  const [handle,     setHandle]     = useState('@haleastudio')
   const [lookName,   setLookName]   = useState('')
   const [cardUrl,    setCardUrl]    = useState<string | null>(null)
   const [generating, setGenerating] = useState(false)

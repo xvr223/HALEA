@@ -145,7 +145,7 @@ function bakeLUT(nodes:GradeNode[],size:number,skinGuard=false,logProfile:LogPro
 const mkId=()=>'n'+Date.now()+Math.random().toString(36).slice(2,5)
 const mkUUID=()=>'xxxxxxxx-xxxx-4xxx-yxxx-xxxxxxxxxxxx'.replace(/[xy]/g,c=>{const r=Math.random()*16|0;return(c==='x'?r:(r&0x3|0x8)).toString(16)})
 const makeCubeContent = (lut:Float32Array, size:number) => {
-  let c=`# HALEA — by @robbiesatriaa\nLUT_3D_SIZE ${size}\nDOMAIN_MIN 0.0 0.0 0.0\nDOMAIN_MAX 1.0 1.0 1.0\n\n`
+  let c=`# HALEA — by @haleastudio\nLUT_3D_SIZE ${size}\nDOMAIN_MIN 0.0 0.0 0.0\nDOMAIN_MAX 1.0 1.0 1.0\n\n`
   for(let i=0;i<lut.length;i+=3) c+=`${lut[i].toFixed(6)} ${lut[i+1].toFixed(6)} ${lut[i+2].toFixed(6)}\n`
   return c
 }

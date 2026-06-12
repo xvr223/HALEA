@@ -5,7 +5,7 @@ import { Toaster } from '@/components/ui'
 
 export const metadata: Metadata = {
   title: 'HALEA — Warna Sinematik, Dirancang dengan Presisi',
-  description: 'Tools color grading profesional untuk video editor Indonesia. Generator LUT berbasis AI, Halation Studio, dan toko preset premium oleh @robbiesatriaa.',
+  description: 'Tools color grading profesional untuk video editor Indonesia. Generator LUT berbasis AI, Halation Studio, dan toko preset premium oleh @haleastudio.',
   keywords: ['LUT', 'color grading', 'halation', 'film look', 'premiere pro', 'davinci resolve', 'preset', 'video editing indonesia'],
   openGraph: {
     title: 'HALEA — Warna Sinematik, Dirancang dengan Presisi',

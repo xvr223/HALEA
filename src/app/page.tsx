@@ -4,7 +4,7 @@ const FEATURES = [
   { icon: '🎞', title: 'LUT Studio', desc: 'Pipeline grading berbasis node yang menghasilkan file .cube — Primary, Curves, HSL, Halation.', href: '/studio', badge: 'PRO', bc: 'text-accent' },
   { icon: '✦',  title: 'AI Match', desc: 'Analisis warna otomatis dari foto referensi. Upload foto, dapatkan grade-nya secara instan.', href: '/studio', badge: 'AI', bc: 'text-a4' },
   { icon: '🤖', title: 'HALEA AI', desc: 'Asisten color grading berbasis AI. Tanya soal LUT, film look, strategi jualan preset — semua dijawab.', href: '/ai', badge: 'FREE', bc: 'text-ok' },
-  { icon: '🛍', title: 'Shop', desc: 'LUT & preset premium karya @robbiesatriaa. Gratis & berbayar. Download langsung, pakai selamanya.', href: '/shop', badge: 'SHOP', bc: 'text-a2' },
+  { icon: '🛍', title: 'Shop', desc: 'LUT & preset premium karya @haleastudio. Gratis & berbayar. Download langsung, pakai selamanya.', href: '/shop', badge: 'SHOP', bc: 'text-a2' },
   { icon: '🛠', title: 'Editor Tools', desc: 'Frame calc, color temp chart, panduan log exposure, storage calc, shortcut Premiere Pro.', href: '/learn', badge: 'TOOLS', bc: 'text-warn' },
   { icon: '📚', title: 'Belajar', desc: '15+ modul belajar color grading dari dasar sampai bisnis jualan preset ke pasar global.', href: '/learn', badge: 'FREE', bc: 'text-ok' },
 ]
@@ -100,9 +100,9 @@ export default function Home() {
             <Link href="/studio" className="px-6 py-3 bg-accent text-white text-sm font-bold rounded-xl hover:bg-orange-400 transition-colors">
               Buka Studio →
             </Link>
-            <a href="https://instagram.com/robbiesatriaa" target="_blank"
+            <a href="https://instagram.com/haleastudio" target="_blank"
               className="px-6 py-3 bg-s3 border border-b1 text-t2 text-sm font-bold rounded-xl hover:border-b3 transition-colors">
-              @robbiesatriaa
+              @haleastudio
             </a>
           </div>
         </div>
@@ -111,7 +111,7 @@ export default function Home() {
       {/* Footer */}
       <footer className="border-t border-b1 bg-bg py-8">
         <div className="max-w-7xl mx-auto px-4 sm:px-6 flex flex-col sm:flex-row items-center justify-between gap-4 text-t3 text-xs font-mono">
-          <span>© 2025 HALEA — by <a href="https://instagram.com/robbiesatriaa" target="_blank" className="hover:text-accent transition-colors">@robbiesatriaa</a></span>
+          <span>© 2025 HALEA — by <a href="https://instagram.com/haleastudio" target="_blank" className="hover:text-accent transition-colors">@haleastudio</a></span>
           <div className="flex gap-4">
             {[['/', 'Beranda'], ['/studio', 'Studio'], ['/shop', 'Shop'], ['/ai', 'AI'], ['/learn', 'Belajar']].map(([href, label]) => (
               <Link key={href} href={href} className="hover:text-txt transition-colors">{label}</Link>
