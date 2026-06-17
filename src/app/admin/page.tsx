@@ -181,7 +181,7 @@ export default function AdminPage() {
               ['Harga / kredit (Rp)',      'creditPrice', settings.creditPrice],
               ['Bonus user baru',         'welcomeCredits', settings.welcomeCredits],
               ['Bake Standard (33³)',     'matchCost', settings.matchCost],
-              ['PowerGrade DaVinci (65³)','powerGradeCost', settings.powerGradeCost],
+              ['Precision Grade (65³)',   'powerGradeCost', settings.powerGradeCost],
               ['Biaya chat AI',           'aiChatCost', settings.aiChatCost],
             ] as [string, 'creditPrice'|'welcomeCredits'|'matchCost'|'powerGradeCost'|'aiChatCost', number][]).map(([label, key, val]) => (
               <div key={key}>

@@ -14,6 +14,7 @@ const NAV = [
   { href: '/ai',      label: 'AI' },
   { href: '/learn',   label: 'Belajar' },
   { href: '/gym',     label: 'Gym' },
+  { href: '/panduan', label: 'Panduan' },
   { href: '/about',   label: 'Tentang' },
 ]
 

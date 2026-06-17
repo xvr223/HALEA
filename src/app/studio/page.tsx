@@ -503,27 +503,27 @@ export default function StudioPage() {
     toast('✓ Downloaded: '+filename)
   }
 
-  // DaVinci Resolve PowerGrade — ultra-fidelity 65³ grid, baked fresh so it
-  // includes log decode + fine-tune + the full v5 transport
+  // Precision Grade — ultra-fidelity 65³ grid, baked fresh so it includes
+  // log decode + fine-tune + the full v5 transport
   const [dvBaking, setDvBaking] = useState(false)
   const downloadDaVinci = async () => {
     if (nodes.length===0) { toast('Match Colors dulu', 'warn'); return }
     if (!authUser) {
-      toast('Daftar gratis dulu untuk export PowerGrade ✦', 'warn')
+      toast('Daftar gratis dulu untuk export Precision Grade ✦', 'warn')
       router.push('/login?next=/studio'); return
     }
     if (!useCredit(powerGradeCost)) {
-      toast(`Kredit kurang — PowerGrade butuh ${powerGradeCost} kredit. Top up di Shop 🛍`, 'err')
+      toast(`Kredit kurang — Precision Grade butuh ${powerGradeCost} kredit. Top up di Shop 🛍`, 'err')
       return
     }
     setDvBaking(true)
     await new Promise(r=>setTimeout(r,30))
     const size = 65
     const baked = bakeLUT(nodes, size, skinGuard, logProfile, logGain)
-    let c=`# HALEA PowerGrade — by @haleastudio\n# DaVinci Resolve — 65-point ultra-fidelity\nLUT_3D_SIZE ${size}\nDOMAIN_MIN 0.0 0.0 0.0\nDOMAIN_MAX 1.0 1.0 1.0\n\n`
+    let c=`# HALEA Precision Grade — by @haleastudio\n# 65-point ultra-fidelity · DaVinci · Resolve · Premiere\nLUT_3D_SIZE ${size}\nDOMAIN_MIN 0.0 0.0 0.0\nDOMAIN_MAX 1.0 1.0 1.0\n\n`
     for(let i=0;i<baked.length;i+=3) c+=`${baked[i].toFixed(6)} ${baked[i+1].toFixed(6)} ${baked[i+2].toFixed(6)}\n`
     const a=document.createElement('a')
-    a.href=URL.createObjectURL(new Blob([c])); a.download=(lutName||'HALEA_PowerGrade')+'_DaVinci.cube'; a.click()
+    a.href=URL.createObjectURL(new Blob([c])); a.download=(lutName||'HALEA_Precision')+'_65.cube'; a.click()
     setDvBaking(false)
     setShowDvHelp(true)
   }
@@ -877,12 +877,12 @@ export default function StudioPage() {
             </button>
           </div>
 
-          {/* DaVinci PowerGrade — premium 65³ */}
+          {/* Precision Grade — premium 65³ */}
           <button onClick={downloadDaVinci} disabled={!nodes.length||dvBaking}
             className="w-full py-2.5 rounded-xl text-[11px] font-bold border border-a2/40 bg-gradient-to-r from-a2/15 to-accent/10 text-a2 hover:from-a2/25 transition-all disabled:opacity-30 flex items-center justify-center gap-1.5">
             {dvBaking
               ? <><span className="w-3 h-3 border-2 border-a2/30 border-t-a2 rounded-full animate-spin"/>Baking 65³...</>
-              : <>🎬 DaVinci PowerGrade <span className="text-[8px] opacity-70">65³</span>{!isAdmin&&<span className="text-[8px] bg-a2/20 px-1.5 py-0.5 rounded-full">{powerGradeCost} kredit</span>}</>}
+              : <>💎 Precision Grade <span className="text-[8px] opacity-70">65³</span>{!isAdmin&&<span className="text-[8px] bg-a2/20 px-1.5 py-0.5 rounded-full">{powerGradeCost} kredit</span>}</>}
           </button>
 
           {!lut&&!nodes.length ? (
@@ -913,6 +913,17 @@ export default function StudioPage() {
               className="w-full py-2.5 rounded-xl text-[11px] font-bold border border-a4/30 bg-a4/10 text-a4 hover:bg-a4/20 transition-colors flex items-center justify-center gap-1.5">
               🧬 Salin HALEA Code
             </button>
+          )}
+
+          {/* Footage-specific reminder */}
+          {lut&&(
+            <div className="bg-warn/5 border border-warn/25 rounded-xl px-3 py-2.5">
+              <p className="text-[10px] text-t2 leading-relaxed">
+                ⚠️ LUT ini dibuat khusus untuk footage yang kamu match. Pasang ke <strong className="text-txt">klip yang sama</strong>.
+                Klip lain → <Link href="/matcher" className="text-accent font-bold hover:underline">Shot Matcher</Link>.
+                {' '}<Link href="/panduan" className="text-accent font-bold hover:underline">Panduan →</Link>
+              </p>
+            </div>
           )}
 
           {/* Shot Matcher promo */}
@@ -1255,11 +1266,11 @@ export default function StudioPage() {
               </div>
             )}
 
-            {/* DaVinci PowerGrade — premium 65³ */}
+            {/* Precision Grade — premium 65³ */}
             {nodes.length>0&&(
               <button onClick={downloadDaVinci} disabled={dvBaking}
                 className="w-full py-4 rounded-2xl text-sm font-bold border border-a2/40 bg-gradient-to-r from-a2/15 to-accent/10 text-a2 active:scale-[0.97] transition-all flex items-center justify-center gap-2 disabled:opacity-40">
-                {dvBaking ? <><span className="w-4 h-4 border-2 border-a2/30 border-t-a2 rounded-full animate-spin"/>Baking PowerGrade 65³...</> : <>🎬 DaVinci PowerGrade — 65³ Ultra{!isAdmin&&<span className="text-[10px] bg-a2/20 px-2 py-0.5 rounded-full">{powerGradeCost} kredit</span>}</>}
+                {dvBaking ? <><span className="w-4 h-4 border-2 border-a2/30 border-t-a2 rounded-full animate-spin"/>Baking Precision 65³...</> : <>💎 Precision Grade — 65³ Ultra{!isAdmin&&<span className="text-[10px] bg-a2/20 px-2 py-0.5 rounded-full">{powerGradeCost} kredit</span>}</>}
               </button>
             )}
 
@@ -1277,6 +1288,17 @@ export default function StudioPage() {
                 className="w-full py-4 rounded-2xl text-sm font-bold border border-a3/30 bg-a3/10 text-a3 active:scale-[0.97] transition-all flex items-center justify-center gap-2">
                 🃏 Buat Share Card untuk Sosmed
               </button>
+            )}
+
+            {/* Footage-specific reminder */}
+            {lut&&(
+              <div className="bg-warn/5 border border-warn/25 rounded-2xl px-4 py-3">
+                <p className="text-[11px] text-t2 leading-relaxed">
+                  ⚠️ LUT ini khusus untuk footage yang kamu match — pasang ke <strong className="text-txt">klip yang sama</strong>.
+                  Untuk klip lain pakai <Link href="/matcher" className="text-accent font-bold">Shot Matcher</Link>.
+                  {' '}<Link href="/panduan" className="text-accent font-bold">Baca panduan →</Link>
+                </p>
+              </div>
             )}
 
             {/* Shot Matcher promo */}
@@ -1340,9 +1362,9 @@ export default function StudioPage() {
         onClick={e=>e.target===e.currentTarget&&setShowDvHelp(false)}>
         <div className="bg-s2 border border-b2 rounded-2xl max-w-md w-full overflow-hidden">
           <div className="px-5 py-4 border-b border-b1 flex items-center gap-3">
-            <span className="text-2xl">🎬</span>
+            <span className="text-2xl">💎</span>
             <div className="flex-1">
-              <h2 className="font-bold text-base leading-tight">PowerGrade siap untuk DaVinci</h2>
+              <h2 className="font-bold text-base leading-tight">Precision Grade siap dipakai</h2>
               <p className="text-[10px] text-t3 mt-0.5">LUT 65³ ultra-fidelity terdownload ✓</p>
             </div>
             <button onClick={()=>setShowDvHelp(false)} className="text-t2 hover:text-txt text-xl">✕</button>
@@ -1353,7 +1375,7 @@ export default function StudioPage() {
               <ol className="text-[12px] text-t2 leading-relaxed list-decimal pl-4 space-y-1">
                 <li>Color page → klik kanan panel <strong className="text-txt">LUTs</strong> → <strong className="text-txt">Open LUT Folder</strong></li>
                 <li>Copy file <code className="text-accent text-[11px]">.cube</code> ke folder itu → klik kanan → <strong className="text-txt">Refresh</strong></li>
-                <li>Klik kanan node → <strong className="text-txt">LUTs</strong> → pilih HALEA PowerGrade-mu</li>
+                <li>Klik kanan node → <strong className="text-txt">LUTs</strong> → pilih HALEA Precision Grade-mu</li>
               </ol>
             </div>
             <div className="border-t border-b1 pt-4">

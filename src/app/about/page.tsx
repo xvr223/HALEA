@@ -162,7 +162,7 @@ export default function AboutPage() {
               Sepowerful apa <span className="italic text-accent">engine-nya?</span>
             </h2>
             <p className="text-t2 text-sm max-w-xl mx-auto leading-relaxed">
-              Smart Match Engine v5 &ldquo;PowerGrade&rdquo; dibangun di atas riset color science yang dipakai
+              Smart Match Engine v5 dibangun di atas riset color science yang dipakai
               industri film (Reinhard 2001, Pitié-Kokaram 2007) — lalu dikembangkan jauh melampauinya.
               Semua berjalan di perangkatmu, dalam hitungan detik.
             </p>

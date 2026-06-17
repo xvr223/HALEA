@@ -1026,7 +1026,7 @@ export function computeSmartMatch(foot: ImageData, ref: ImageData): SmartMatchRe
     if (uncovered >= 0.18 && worstUncov >= 0) {
       notes.push(`Referensi punya warna ${BAND_NAMES[worstUncov]} dominan yang tidak ada di footage — bagian look itu dilewati`)
     }
-    if (denseLut) notes.push('PowerGrade aktif — seluruh distribusi warna dicocokkan (bukan cuma rata-rata)')
+    if (denseLut) notes.push('Engine presisi aktif — seluruh distribusi warna dicocokkan (bukan cuma rata-rata)')
     if (skinP === 1) notes.push('Referensi tanpa skin tone — warna kulit footage diproteksi otomatis')
     else if (skinW === 1 && skinFracR >= 0.01) notes.push('Skin tone di-match langsung ke skin referensi')
     if (confidence < 72) notes.push('Konten cukup berbeda — coba Match Strength 60–70% untuk hasil lebih natural')

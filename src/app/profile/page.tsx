@@ -79,7 +79,7 @@ export default function ProfilePage() {
           </div>
           <p className="font-mono text-4xl font-bold text-ok mb-1">{isAdmin ? '∞' : credits}</p>
           <p className="text-[11px] text-t3 leading-relaxed mb-4">
-            Bake Standard 33³: {matchCost} kredit · DaVinci PowerGrade 65³: {powerGradeCost} kredit · LUT Matcher: {matchCost} kredit · Chat AI: {aiChatCost} kredit
+            Bake Standard 33³: {matchCost} kredit · Precision Grade 65³: {powerGradeCost} kredit · LUT Matcher: {matchCost} kredit · Chat AI: {aiChatCost} kredit
             {!isAdmin && <><br/>Harga satuan: {rp(creditPrice)}/kredit</>}
           </p>
           {!isAdmin && (
