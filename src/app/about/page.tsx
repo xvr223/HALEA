@@ -232,6 +232,89 @@ export default function AboutPage() {
         </div>
       </section>
 
+      {/* ── PERJALANAN ENGINE V1 → V5 ────────────────────────────────────── */}
+      <section className="border-t border-b1">
+        <div className="max-w-3xl mx-auto px-6 py-16 md:py-24">
+          <div className="text-center mb-12">
+            <p className="text-[9px] font-black tracking-[0.3em] uppercase text-accent mb-3">Bukan dibangun dalam semalam</p>
+            <h2 className="font-fraunces text-3xl md:text-4xl font-semibold mb-4">
+              Perjalanan <span className="italic text-accent">Engine</span> — V1 ke V5
+            </h2>
+            <p className="text-t2 text-sm max-w-xl mx-auto leading-relaxed">
+              Lima generasi, ratusan jam riset & ngoprek. Tiap versi lahir dari satu masalah nyata yang
+              bikin hasil grading belum &ldquo;nempel&rdquo;. Ini catatan perjalanannya.
+            </p>
+          </div>
+
+          <div className="relative">
+            {/* vertical line */}
+            <div className="absolute left-[19px] top-3 bottom-3 w-px bg-gradient-to-b from-b2 via-accent/30 to-accent hidden sm:block" />
+
+            <div className="flex flex-col gap-5">
+              {[
+                {
+                  v: 'V1', tag: 'Reference Analyzer', cur: false,
+                  problem: 'Engine cuma menganalisis foto referensi sendirian — hitung rata-rata warna, lalu tebak temperature/contrast/saturation. Footage-mu tidak dipakai sama sekali.',
+                  fix: 'Apply adjustment generik berdasarkan tebakan.',
+                  flaw: 'Hasilnya generik — "agak warm" atau "agak teal", bukan benar-benar meniru look referensi.',
+                },
+                {
+                  v: 'V2', tag: 'Smart Match — Color Transfer', cur: false,
+                  problem: 'Look referensi tidak bisa ditiru tanpa membandingkannya dengan footage asli.',
+                  fix: 'Beralih ke true color transfer (MKL / Monge-Kantorovich di Oklab): memetakan distribusi warna footage → distribusi warna referensi. Plus tone curve via CDF matching.',
+                  flaw: 'Cuma mencocokkan rata-rata & kovarians. Referensi langit biru bisa "menyeret" warna kulit jadi oranye neon.',
+                },
+                {
+                  v: 'V3', tag: 'Content-Aware', cur: false,
+                  problem: 'Transfer global merusak subjek penting — kulit digoreng demi mengejar warna dominan referensi.',
+                  fix: 'Per-hue-band matching (hijau ke hijau, oranye ke oranye) + deteksi & proteksi skin tone + perceptual guards (batas rotasi hue, limiter chroma anti-neon).',
+                  flaw: 'Koreksi masih per-warna, belum sadar terang-gelap. "Shadow teal + highlight warm" belum ketangkep.',
+                },
+                {
+                  v: 'V4', tag: 'Zone Matrix + Self-Correcting', cur: false,
+                  problem: 'Look sinematik hidup di kombinasi warna × kecerahan — satu koreksi per-hue tidak cukup.',
+                  fix: 'Zone Matrix 8 hue × 3 zona luma = 24 sel koreksi. Iterative refinement (engine mengukur hasilnya & mengoreksi diri). Plus Confidence Report yang menilai & menjelaskan hasilnya dengan jujur.',
+                  flaw: 'Masih mencocokkan momen statistik (rata-rata + kovarians), belum seluruh distribusi warna.',
+                },
+                {
+                  v: 'V5', tag: 'Full-Distribution Transport', cur: true,
+                  problem: 'Mencocokkan rata-rata saja punya plafon akurasi. Untuk look yang benar-benar "nempel" perlu mencocokkan SELURUH distribusi warna.',
+                  fix: 'Iterative Distribution Transfer (Sliced-Wasserstein optimal transport, Pitié-Kokaram 2007): proyeksikan kedua cloud warna ke puluhan sumbu 3D acak, selesaikan optimal transport 1D per sumbu, ulangi sampai konvergen — lalu bake jadi dense 3D LUT presisi tinggi.',
+                  flaw: 'Hasil: 77% lebih dekat ke distribusi referensi (vs 53% di V4). Inilah engine yang dipakai HALEA sekarang.',
+                },
+              ].map((e) => (
+                <div key={e.v} className="relative sm:pl-14">
+                  {/* node dot */}
+                  <div className={`absolute left-0 top-1 w-10 h-10 rounded-full hidden sm:flex items-center justify-center text-[11px] font-black border-2 ${e.cur ? 'bg-accent text-white border-accent shadow-lg shadow-accent/30' : 'bg-s2 text-t2 border-b2'}`}>
+                    {e.v}
+                  </div>
+                  <div className={`rounded-2xl border p-5 ${e.cur ? 'border-accent/40 bg-accent/5' : 'border-b1 bg-s2'}`}>
+                    <div className="flex items-center gap-2 mb-3 flex-wrap">
+                      <span className="sm:hidden text-[10px] font-black px-2 py-0.5 rounded-full bg-s4 text-t2">{e.v}</span>
+                      <h3 className="font-bold text-base">{e.tag}</h3>
+                      {e.cur && <span className="text-[9px] font-black tracking-widest uppercase px-2 py-0.5 rounded-full bg-accent text-white">Sekarang</span>}
+                    </div>
+                    <div className="space-y-2.5 text-[13px] leading-relaxed">
+                      <p className="text-t2"><span className="text-t3 font-bold">Masalah:</span> {e.problem}</p>
+                      <p className="text-t2"><span className="text-accent font-bold">Solusi:</span> {e.fix}</p>
+                      <p className={e.cur ? 'text-ok' : 'text-t3'}><span className="font-bold">{e.cur ? 'Hasil:' : 'Yang masih kurang:'}</span> {e.flaw}</p>
+                    </div>
+                  </div>
+                </div>
+              ))}
+            </div>
+          </div>
+
+          <div className="mt-10 bg-s2 border border-b1 rounded-2xl p-6 text-center">
+            <p className="text-t2 text-sm leading-relaxed">
+              Setiap versi bukan sekadar &ldquo;update&rdquo; — tiap kali, satu masalah warna yang spesifik dibedah,
+              dicarikan dasar matematisnya di paper riset, lalu dibangun ulang dari nol agar tetap ringan & jalan di browser.
+              <strong className="text-txt"> Itulah kenapa HALEA bukan filter biasa.</strong>
+            </p>
+          </div>
+        </div>
+      </section>
+
       {/* ── EKOSISTEM ────────────────────────────────────────────────────── */}
       <section className="max-w-4xl mx-auto px-6 py-16 md:py-24">
         <div className="text-center mb-10">
@@ -263,12 +346,12 @@ export default function AboutPage() {
       <section className="border-t border-b border-b1 bg-s2">
         <div className="max-w-5xl mx-auto px-6 py-14 grid grid-cols-2 md:grid-cols-4 gap-8 text-center">
           {[
+            { n: 'V5',     label: 'Generasi engine sekarang' },
             { n: '0',      label: 'Foto di-upload ke server' },
             { n: '8',      label: 'Format log — rumus exact' },
             { n: '24',     label: 'Sel koreksi per match' },
+            { n: '77%',    label: 'Lebih dekat ke referensi (vs V4)' },
             { n: '<2 dtk', label: 'Referensi → LUT jadi' },
-            { n: '~114',   label: 'Karakter per HALEA Code' },
-            { n: '4',      label: 'Format export LUT' },
             { n: '26',     label: 'Pelajaran di Academy' },
             { n: '2017',   label: 'Tahun perjalanan dimulai' },
           ].map(({ n, label }) => (
