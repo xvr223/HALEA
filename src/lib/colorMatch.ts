@@ -485,6 +485,52 @@ function replayIDT(steps: IDTStep[], L: number, A: number, B: number): [number, 
   return [x, y, z]
 }
 
+// Replay the IDT chain over an RGB lattice → dense LUT, folding in the skin
+// layer + perceptual guards. Used for the live 33³ preview LUT and, on demand,
+// for high-resolution (65³) DaVinci PowerGrade export.
+interface SkinLayer { skinW: number; skinH: number; skinS: number; skinL: number }
+function bakeDenseFromSteps(steps: IDTStep[], sk: SkinLayer, size: number): Float32Array {
+  const N = size
+  const lut = new Float32Array(N * N * N * 3)
+  let li = 0
+  for (let bi = 0; bi < N; bi++) for (let gi = 0; gi < N; gi++) for (let ri = 0; ri < N; ri++) {
+    const r0 = ri / (N - 1), g0 = gi / (N - 1), b0 = bi / (N - 1)
+    const [oL, oA, oB] = srgbToOklab(r0, g0, b0)
+    const [nL0, nA0, nB0] = replayIDT(steps, oL, oA, oB)
+    let nL = nL0, nA = nA0, nB = nB0
+    const C0 = Math.hypot(oA, oB), Cn = Math.hypot(nA, nB)
+    if (C0 > 0.015 && Cn > 1e-5) {
+      let h0 = Math.atan2(oB, oA); if (h0 < 0) h0 += TAU
+      let hn = Math.atan2(nB, nA)
+      let Cf = Cn
+      const sw = softSkin(oL, oA, oB) * sk.skinW
+      if (sw > 0.001) {
+        const targetH = h0 + sk.skinH, targetC = C0 * sk.skinS
+        hn += angDiff(targetH, hn) * sw
+        Cf += (targetC - Cf) * sw
+        nL += (oL + sk.skinL - nL) * sw * 0.6
+      }
+      const capW = C0 >= 0.06 ? 1 : C0 <= 0.025 ? 0 : (() => { const t = (C0 - 0.025) / 0.035; return t * t * (3 - 2 * t) })()
+      if (capW > 0.05) {
+        const lim = HUE_CAP / capW
+        const dH = angDiff(hn, h0)
+        if (dH >  lim) hn = h0 + lim + (dH - lim) * 0.25
+        if (dH < -lim) hn = h0 - lim + (dH + lim) * 0.25
+      }
+      const Cmax = C0 * 1.5 + 0.05
+      if (Cf > Cmax) Cf = Cmax + (Cf - Cmax) * 0.25
+      if (Cf > 0.34) Cf = 0.34
+      nA = Cf * Math.cos(hn); nB = Cf * Math.sin(hn)
+    } else {
+      const Cmax = C0 * 1.5 + 0.05
+      if (Cn > Cmax) { const k = (Cmax + (Cn - Cmax) * 0.25) / Cn; nA *= k; nB *= k }
+    }
+    const [mr, mg, mb] = oklabToSrgb(nL, nA, nB)
+    lut[li++] = clamp01(mr); lut[li++] = clamp01(mg); lut[li++] = clamp01(mb)
+  }
+  return lut
+}
+
 // ── Dense LUT registry (heavy data kept out of node params / HALEA Codes) ─────
 interface DenseLut { lut: Float32Array; size: number }
 const lutRegistry = new Map<string, DenseLut>()
@@ -911,47 +957,9 @@ export function computeSmartMatch(foot: ImageData, ref: ImageData): SmartMatchRe
     }
     const steps = solveIDT(footCloud, refCloud)
     if (steps.length) {
-      const N = 33
-      const lut = new Float32Array(N * N * N * 3)
-      let li = 0
-      for (let bi = 0; bi < N; bi++) for (let gi = 0; gi < N; gi++) for (let ri = 0; ri < N; ri++) {
-        const r0 = ri / (N - 1), g0 = gi / (N - 1), b0 = bi / (N - 1)
-        const [oL, oA, oB] = srgbToOklab(r0, g0, b0)
-        let [nL, nA, nB] = replayIDT(steps, oL, oA, oB)
-        const C0 = Math.hypot(oA, oB), Cn = Math.hypot(nA, nB)
-        if (C0 > 0.015 && Cn > 1e-5) {
-          let h0 = Math.atan2(oB, oA); if (h0 < 0) h0 += TAU
-          let hn = Math.atan2(nB, nA)
-          let Cf = Cn
-          // skin layer — anchor skin pixels to original hue/chroma (+ offsets);
-          // in protect mode skinH=0/skinS=1 so it pulls straight back to original
-          const sw = softSkin(oL, oA, oB) * skinW
-          if (sw > 0.001) {
-            const targetH = h0 + skinH, targetC = C0 * skinS
-            hn += angDiff(targetH, hn) * sw
-            Cf += (targetC - Cf) * sw
-            nL += (oL + skinL - nL) * sw * 0.6
-          }
-          // guard 1: hue swing cap weighted by chroma (near-neutrals may flip)
-          const capW = C0 >= 0.06 ? 1 : C0 <= 0.025 ? 0 : (() => { const t = (C0 - 0.025) / 0.035; return t * t * (3 - 2 * t) })()
-          if (capW > 0.05) {
-            const lim = HUE_CAP / capW
-            const dH = angDiff(hn, h0)
-            if (dH >  lim) hn = h0 + lim + (dH - lim) * 0.25
-            if (dH < -lim) hn = h0 - lim + (dH + lim) * 0.25
-          }
-          // guard 2: chroma soft-knee limiter (anti-neon)
-          const Cmax = C0 * 1.5 + 0.05
-          if (Cf > Cmax) Cf = Cmax + (Cf - Cmax) * 0.25
-          if (Cf > 0.34) Cf = 0.34
-          nA = Cf * Math.cos(hn); nB = Cf * Math.sin(hn)
-        } else {
-          const Cmax = C0 * 1.5 + 0.05
-          if (Cn > Cmax) { const k = (Cmax + (Cn - Cmax) * 0.25) / Cn; nA *= k; nB *= k }
-        }
-        const [mr, mg, mb] = oklabToSrgb(nL, nA, nB)
-        lut[li++] = clamp01(mr); lut[li++] = clamp01(mg); lut[li++] = clamp01(mb)
-      }
+      const N = 33                          // transport grid; DaVinci export upsamples to 65³
+      const skin: SkinLayer = { skinW, skinH, skinS, skinL }
+      const lut = bakeDenseFromSteps(steps, skin, N)
       denseLut = { lut, size: N }
       lutSize = N
       lutId = registerDenseLut(lut, N)

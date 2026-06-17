@@ -502,6 +502,24 @@ export default function StudioPage() {
     toast('✓ Downloaded: '+filename)
   }
 
+  // DaVinci Resolve PowerGrade — ultra-fidelity 65³ grid, baked fresh so it
+  // includes log decode + fine-tune + the full v5 transport
+  const [dvBaking, setDvBaking] = useState(false)
+  const downloadDaVinci = async () => {
+    if (nodes.length===0) { toast('Match Colors dulu', 'warn'); return }
+    setDvBaking(true)
+    await new Promise(r=>setTimeout(r,30))
+    const size = 65
+    const baked = bakeLUT(nodes, size, skinGuard, logProfile, logGain)
+    let c=`# HALEA PowerGrade — by @haleastudio\n# DaVinci Resolve — 65-point ultra-fidelity\nLUT_3D_SIZE ${size}\nDOMAIN_MIN 0.0 0.0 0.0\nDOMAIN_MAX 1.0 1.0 1.0\n\n`
+    for(let i=0;i<baked.length;i+=3) c+=`${baked[i].toFixed(6)} ${baked[i+1].toFixed(6)} ${baked[i+2].toFixed(6)}\n`
+    const a=document.createElement('a')
+    a.href=URL.createObjectURL(new Blob([c])); a.download=(lutName||'HALEA_PowerGrade')+'_DaVinci.cube'; a.click()
+    setDvBaking(false)
+    setShowDvHelp(true)
+  }
+  const [showDvHelp, setShowDvHelp] = useState(false)
+
   // CapCut: standard .cube format with CapCut suffix
   const downloadCapCut = () => {
     if (!lut) { toast('Bake LUT dulu', 'warn'); return }
@@ -849,6 +867,12 @@ export default function StudioPage() {
               <span className="text-[8px] text-t3 text-center leading-tight">CapCut Pro</span>
             </button>
           </div>
+
+          {/* DaVinci PowerGrade — premium 65³ */}
+          <button onClick={downloadDaVinci} disabled={!nodes.length||dvBaking}
+            className="w-full py-2.5 rounded-xl text-[11px] font-bold border border-a2/40 bg-gradient-to-r from-a2/15 to-accent/10 text-a2 hover:from-a2/25 transition-all disabled:opacity-30 flex items-center justify-center gap-1.5">
+            {dvBaking ? <><span className="w-3 h-3 border-2 border-a2/30 border-t-a2 rounded-full animate-spin"/>Baking 65³...</> : <>🎬 DaVinci PowerGrade <span className="text-[8px] opacity-70">65³</span></>}
+          </button>
 
           {!lut&&!nodes.length ? (
             <div className="bg-s2 border border-dashed border-b2 rounded-xl p-3 text-center">
@@ -1220,6 +1244,14 @@ export default function StudioPage() {
               </div>
             )}
 
+            {/* DaVinci PowerGrade — premium 65³ */}
+            {nodes.length>0&&(
+              <button onClick={downloadDaVinci} disabled={dvBaking}
+                className="w-full py-4 rounded-2xl text-sm font-bold border border-a2/40 bg-gradient-to-r from-a2/15 to-accent/10 text-a2 active:scale-[0.97] transition-all flex items-center justify-center gap-2 disabled:opacity-40">
+                {dvBaking ? <><span className="w-4 h-4 border-2 border-a2/30 border-t-a2 rounded-full animate-spin"/>Baking PowerGrade 65³...</> : <>🎬 DaVinci PowerGrade — 65³ Ultra</>}
+              </button>
+            )}
+
             {/* HALEA Code copy */}
             {nodes.length>0&&(
               <button onClick={copyHaleaCode}
@@ -1290,6 +1322,49 @@ export default function StudioPage() {
         ))}
       </div>
     </div>
+
+    {/* DaVinci PowerGrade — install guide */}
+    {showDvHelp&&(
+      <div className="fixed inset-0 bg-black/80 backdrop-blur-sm z-[60] flex items-center justify-center p-4 animate-fade-in"
+        onClick={e=>e.target===e.currentTarget&&setShowDvHelp(false)}>
+        <div className="bg-s2 border border-b2 rounded-2xl max-w-md w-full overflow-hidden">
+          <div className="px-5 py-4 border-b border-b1 flex items-center gap-3">
+            <span className="text-2xl">🎬</span>
+            <div className="flex-1">
+              <h2 className="font-bold text-base leading-tight">PowerGrade siap untuk DaVinci</h2>
+              <p className="text-[10px] text-t3 mt-0.5">LUT 65³ ultra-fidelity terdownload ✓</p>
+            </div>
+            <button onClick={()=>setShowDvHelp(false)} className="text-t2 hover:text-txt text-xl">✕</button>
+          </div>
+          <div className="p-5 flex flex-col gap-4">
+            <div>
+              <p className="text-[9px] font-black tracking-widest uppercase text-a2 mb-2">Cara 1 — sebagai LUT (cepat)</p>
+              <ol className="text-[12px] text-t2 leading-relaxed list-decimal pl-4 space-y-1">
+                <li>Color page → klik kanan panel <strong className="text-txt">LUTs</strong> → <strong className="text-txt">Open LUT Folder</strong></li>
+                <li>Copy file <code className="text-accent text-[11px]">.cube</code> ke folder itu → klik kanan → <strong className="text-txt">Refresh</strong></li>
+                <li>Klik kanan node → <strong className="text-txt">LUTs</strong> → pilih HALEA PowerGrade-mu</li>
+              </ol>
+            </div>
+            <div className="border-t border-b1 pt-4">
+              <p className="text-[9px] font-black tracking-widest uppercase text-accent mb-2">Cara 2 — jadi PowerGrade Still (pro)</p>
+              <ol className="text-[12px] text-t2 leading-relaxed list-decimal pl-4 space-y-1">
+                <li>Apply LUT-nya ke sebuah node (Cara 1)</li>
+                <li>Klik kanan thumbnail klip di Gallery → <strong className="text-txt">Grab Still</strong></li>
+                <li>Di Gallery, klik kanan still → <strong className="text-txt">Add to PowerGrade Album</strong></li>
+              </ol>
+              <p className="text-[10px] text-t3 mt-2.5 leading-relaxed">Sekarang grade-mu tersimpan di album PowerGrade — tinggal drag ke klip mana pun. ✦</p>
+            </div>
+            <div className="bg-s3 rounded-xl px-3.5 py-3 text-[11px] text-t2 leading-relaxed">
+              💡 <strong className="text-txt">65³</strong> = grid 274.625 titik warna (vs 33³ standar). Gradien lebih halus, banding minimal — kualitas yang colorist Resolve cari.
+            </div>
+            <button onClick={()=>setShowDvHelp(false)}
+              className="w-full py-3 bg-accent text-white rounded-xl text-sm font-bold hover:bg-orange-400 transition-colors">
+              Mengerti 👍
+            </button>
+          </div>
+        </div>
+      </div>
+    )}
     </>
   )
 }
