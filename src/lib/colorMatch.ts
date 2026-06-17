@@ -35,6 +35,11 @@ export interface SmartMatchResult {
   shadowCast: string
   highCast: string
   toneDesc: string
+  // v5 PowerGrade — dense 3D LUT (full-distribution transport). Lives in a
+  // module registry keyed by lutId; preview/bake trilinear-interpolate it.
+  // Falls back to the parametric model when absent (e.g. decoded HALEA Codes).
+  lutId?: string
+  lutSize?: number
 }
 
 const clamp01 = (v: number) => v < 0 ? 0 : v > 1 ? 1 : v
@@ -336,6 +341,185 @@ function castName(da: number, db: number): string {
   return 'Magenta'
 }
 
+// ══════════════════════════════════════════════════════════════════════════════
+// IDT — Iterative Distribution Transfer (Sliced-Wasserstein optimal transport).
+// MKL only matches the first two moments (mean + covariance). IDT matches the
+// ENTIRE color distribution: repeatedly project both clouds onto random 3D axes,
+// solve the exact 1D optimal transport per axis (quantile remap), and move the
+// footage cloud. Converges to the true N-D transport map (Pitié-Kokaram-Dahyot
+// 2007). The whole iteration sequence is a deterministic, replayable function —
+// so we replay it over an RGB lattice to bake a dense 3D LUT.
+// ══════════════════════════════════════════════════════════════════════════════
+
+const IDT_ITERS = 24
+const IDT_KNOTS = 28
+const IDT_MAXN  = 7000          // subsample cap per cloud
+const IDT_SEED  = 0x9e3779b1    // fixed → deterministic results
+
+interface IDT1DMap { dom: Float32Array; out: Float32Array }       // foot-quantile → ref-quantile knots
+interface IDTStep  { rot: number[]; maps: IDT1DMap[] }            // rot = 3 rows (axes), 3 maps
+
+// seeded gaussian via Box-Muller on mulberry32
+function makeRng(seed: number) {
+  let s = seed >>> 0
+  return () => {
+    s += 0x6D2B79F5
+    let t = Math.imul(s ^ (s >>> 15), s | 1)
+    t ^= t + Math.imul(t ^ (t >>> 7), t | 61)
+    return ((t ^ (t >>> 14)) >>> 0) / 4294967296
+  }
+}
+function randomRotation(rng: () => number): number[] {
+  // 3 gaussian columns → Gram-Schmidt → orthonormal basis (uniform on SO(3))
+  const g = () => { const u = Math.max(1e-9, rng()), v = rng(); return Math.sqrt(-2 * Math.log(u)) * Math.cos(TAU * v) }
+  const col = [[g(), g(), g()], [g(), g(), g()], [g(), g(), g()]]
+  const dot = (a: number[], b: number[]) => a[0]*b[0]+a[1]*b[1]+a[2]*b[2]
+  const norm = (a: number[]) => { const n = Math.hypot(a[0],a[1],a[2]) || 1; return [a[0]/n,a[1]/n,a[2]/n] }
+  let c0 = norm(col[0])
+  let c1 = [col[1][0]-dot(col[1],c0)*c0[0], col[1][1]-dot(col[1],c0)*c0[1], col[1][2]-dot(col[1],c0)*c0[2]]
+  c1 = norm(c1)
+  // c2 = c0 × c1
+  const c2 = [c0[1]*c1[2]-c0[2]*c1[1], c0[2]*c1[0]-c0[0]*c1[2], c0[0]*c1[1]-c0[1]*c1[0]]
+  return [c0[0],c0[1],c0[2], c1[0],c1[1],c1[2], c2[0],c2[1],c2[2]]   // row-major, rows = axes
+}
+
+// Exact 1D optimal transport: map foot's p-th percentile → ref's p-th
+// percentile. Domain knots = foot quantiles, range knots = ref quantiles, so an
+// identical pair gives the identity map. Monotone by construction.
+function build1DMap(fv: Float32Array, rv: Float32Array): IDT1DMap {
+  const fs = Float32Array.from(fv).sort()
+  const rs = Float32Array.from(rv).sort()
+  const q = (arr: Float32Array, t: number) => {
+    const x = t * (arr.length - 1), i = x | 0
+    return i >= arr.length - 1 ? arr[arr.length - 1] : arr[i] + (arr[i + 1] - arr[i]) * (x - i)
+  }
+  const dom = new Float32Array(IDT_KNOTS + 1)
+  const out = new Float32Array(IDT_KNOTS + 1)
+  for (let k = 0; k <= IDT_KNOTS; k++) { const p = k / IDT_KNOTS; dom[k] = q(fs, p); out[k] = q(rs, p) }
+  // ensure strictly increasing domain for safe interpolation
+  for (let k = 1; k <= IDT_KNOTS; k++) if (dom[k] <= dom[k - 1]) dom[k] = dom[k - 1] + 1e-6
+  // light smoothing of the displacement keeps the map kink-free (regularization)
+  const disp = new Float32Array(IDT_KNOTS + 1)
+  for (let k = 0; k <= IDT_KNOTS; k++) disp[k] = out[k] - dom[k]
+  for (let k = 1; k < IDT_KNOTS; k++) disp[k] = disp[k - 1] * 0.18 + disp[k] * 0.64 + disp[k + 1] * 0.18
+  for (let k = 0; k <= IDT_KNOTS; k++) out[k] = dom[k] + disp[k]
+  return { dom, out }
+}
+function apply1DMap(m: IDT1DMap, x: number): number {
+  const dom = m.dom, out = m.out, n = IDT_KNOTS
+  if (x <= dom[0])  return out[0] + (x - dom[0])                       // linear extrapolation
+  if (x >= dom[n])  return out[n] + (x - dom[n])
+  let lo = 0, hi = n
+  while (hi - lo > 1) { const mid = (lo + hi) >> 1; if (dom[mid] <= x) lo = mid; else hi = mid }
+  const t = (x - dom[lo]) / (dom[hi] - dom[lo])
+  return out[lo] + (out[hi] - out[lo]) * t
+}
+
+// solve the IDT chain that morphs the foot cloud into the ref distribution
+function solveIDT(footCloud: number[], refCloud: number[]): IDTStep[] {
+  const sub = (cloud: number[]): Float32Array => {
+    const n = cloud.length / 3
+    if (n <= IDT_MAXN) return Float32Array.from(cloud)
+    const out = new Float32Array(IDT_MAXN * 3)
+    const stride = n / IDT_MAXN
+    for (let i = 0; i < IDT_MAXN; i++) {
+      const si = (Math.floor(i * stride)) * 3
+      out[i*3] = cloud[si]; out[i*3+1] = cloud[si+1]; out[i*3+2] = cloud[si+2]
+    }
+    return out
+  }
+  const F = sub(footCloud), R = sub(refCloud)
+  const nf = F.length / 3, nr = R.length / 3
+  if (nf < 40 || nr < 40) return []
+  const rng = makeRng(IDT_SEED)
+  const steps: IDTStep[] = []
+  const fp0 = new Float32Array(nf), fp1 = new Float32Array(nf), fp2 = new Float32Array(nf)
+  const rp0 = new Float32Array(nr), rp1 = new Float32Array(nr), rp2 = new Float32Array(nr)
+
+  for (let it = 0; it < IDT_ITERS; it++) {
+    const rot = it === 0
+      ? [1,0,0, 0,1,0, 0,0,1]              // first pass along native L,a,b axes
+      : randomRotation(rng)
+    for (let i = 0; i < nf; i++) {
+      const x = F[i*3], y = F[i*3+1], z = F[i*3+2]
+      fp0[i] = rot[0]*x+rot[1]*y+rot[2]*z
+      fp1[i] = rot[3]*x+rot[4]*y+rot[5]*z
+      fp2[i] = rot[6]*x+rot[7]*y+rot[8]*z
+    }
+    for (let i = 0; i < nr; i++) {
+      const x = R[i*3], y = R[i*3+1], z = R[i*3+2]
+      rp0[i] = rot[0]*x+rot[1]*y+rot[2]*z
+      rp1[i] = rot[3]*x+rot[4]*y+rot[5]*z
+      rp2[i] = rot[6]*x+rot[7]*y+rot[8]*z
+    }
+    const m0 = build1DMap(fp0, rp0), m1 = build1DMap(fp1, rp1), m2 = build1DMap(fp2, rp2)
+    steps.push({ rot, maps: [m0, m1, m2] })
+    // move foot cloud: p += Σ_k (map_k(proj_k) − proj_k) · axis_k  (rows of rot)
+    for (let i = 0; i < nf; i++) {
+      const d0 = apply1DMap(m0, fp0[i]) - fp0[i]
+      const d1 = apply1DMap(m1, fp1[i]) - fp1[i]
+      const d2 = apply1DMap(m2, fp2[i]) - fp2[i]
+      F[i*3]   += d0*rot[0] + d1*rot[3] + d2*rot[6]
+      F[i*3+1] += d0*rot[1] + d1*rot[4] + d2*rot[7]
+      F[i*3+2] += d0*rot[2] + d1*rot[5] + d2*rot[8]
+    }
+  }
+  return steps
+}
+
+// replay the chain on one Oklab point
+function replayIDT(steps: IDTStep[], L: number, A: number, B: number): [number, number, number] {
+  let x = L, y = A, z = B
+  for (let it = 0; it < steps.length; it++) {
+    const { rot, maps } = steps[it]
+    const p0 = rot[0]*x+rot[1]*y+rot[2]*z
+    const p1 = rot[3]*x+rot[4]*y+rot[5]*z
+    const p2 = rot[6]*x+rot[7]*y+rot[8]*z
+    const d0 = apply1DMap(maps[0], p0) - p0
+    const d1 = apply1DMap(maps[1], p1) - p1
+    const d2 = apply1DMap(maps[2], p2) - p2
+    x += d0*rot[0] + d1*rot[3] + d2*rot[6]
+    y += d0*rot[1] + d1*rot[4] + d2*rot[7]
+    z += d0*rot[2] + d1*rot[5] + d2*rot[8]
+  }
+  return [x, y, z]
+}
+
+// ── Dense LUT registry (heavy data kept out of node params / HALEA Codes) ─────
+interface DenseLut { lut: Float32Array; size: number }
+const lutRegistry = new Map<string, DenseLut>()
+let lutCounter = 0
+export function registerDenseLut(lut: Float32Array, size: number): string {
+  const id = 'pg' + (++lutCounter).toString(36) + Date.now().toString(36)
+  lutRegistry.set(id, { lut, size })
+  if (lutRegistry.size > 20) lutRegistry.delete(lutRegistry.keys().next().value as string)
+  return id
+}
+export function getDenseLut(id: string | undefined): DenseLut | undefined {
+  return id ? lutRegistry.get(id) : undefined
+}
+
+// trilinear sample of an RGB-domain dense LUT
+function trilinear(d: DenseLut, r: number, g: number, b: number): [number, number, number] {
+  const N = d.size, L = d.lut, s = N - 1
+  const fr = clamp01(r) * s, fg = clamp01(g) * s, fb = clamp01(b) * s
+  const r0 = Math.min(s - 1, fr | 0), g0 = Math.min(s - 1, fg | 0), b0 = Math.min(s - 1, fb | 0)
+  const dr = fr - r0, dg = fg - g0, db = fb - b0
+  const idx = (ri: number, gi: number, bi: number) => (bi * N * N + gi * N + ri) * 3
+  const out: [number, number, number] = [0, 0, 0]
+  for (let ch = 0; ch < 3; ch++) {
+    const c000 = L[idx(r0,g0,b0)+ch],     c100 = L[idx(r0+1,g0,b0)+ch]
+    const c010 = L[idx(r0,g0+1,b0)+ch],   c110 = L[idx(r0+1,g0+1,b0)+ch]
+    const c001 = L[idx(r0,g0,b0+1)+ch],   c101 = L[idx(r0+1,g0,b0+1)+ch]
+    const c011 = L[idx(r0,g0+1,b0+1)+ch], c111 = L[idx(r0+1,g0+1,b0+1)+ch]
+    const c00 = c000+(c100-c000)*dr, c01 = c001+(c101-c001)*dr
+    const c10 = c010+(c110-c010)*dr, c11 = c011+(c111-c011)*dr
+    const c0 = c00+(c10-c00)*dg,     c1 = c01+(c11-c01)*dg
+    out[ch] = c0+(c1-c0)*db
+  }
+  return out
+}
+
 // ── Unified per-pixel transform ───────────────────────────────────────────────
 export interface MatchTransform {
   T: ArrayLike<number>
@@ -346,6 +530,7 @@ export interface MatchTransform {
   zoneS: ArrayLike<number>
   zoneL: ArrayLike<number>
   skinH: number; skinS: number; skinL: number; skinW: number; skinP: number
+  dense?: DenseLut             // v5: when present, this IS the transform
 }
 
 const HUE_CAP = 0.5236      // ±30° max hue swing per pixel (soft beyond)
@@ -420,6 +605,16 @@ function applyOklab(oL: number, oA: number, oB: number, m: MatchTransform): [num
 }
 
 export function applyTransform(r: number, g: number, b: number, m: MatchTransform, amount: number): [number, number, number] {
+  // v5 fast path: trilinear-interpolate the dense PowerGrade LUT (full transport
+  // already baked, incl. skin layer + guards). Falls back to the parametric model.
+  if (m.dense) {
+    const [mr, mg, mb] = trilinear(m.dense, r, g, b)
+    return [
+      clamp01(r + (mr - r) * amount),
+      clamp01(g + (mg - g) * amount),
+      clamp01(b + (mb - b) * amount),
+    ]
+  }
   const [oL, oA, oB] = srgbToOklab(r, g, b)
   const [nL, nA, nB] = applyOklab(oL, oA, oB, m)
   const [mr, mg, mb] = oklabToSrgb(nL, nA, nB)
@@ -454,6 +649,9 @@ export function transformFromParams(p: Record<string, number | string>): MatchTr
       zoneH, zoneS, zoneL,
       skinH: num('skh', 0), skinS: num('sks', 1), skinL: num('skl', 0),
       skinW: num('skw', 0), skinP: num('skp', 0),
+      // v5: use the dense LUT when its id resolves in this session (Studio
+      // preview/bake); decoded HALEA Codes have no id → parametric fallback
+      dense: typeof p.lutId === 'string' ? getDenseLut(p.lutId) : undefined,
     }
     tfCache.set(p, t)
   }
@@ -468,6 +666,7 @@ export function applyMatch(r: number, g: number, b: number, m: SmartMatchResult,
       T: m.matrix, muF: m.muF, muR: m.muR, curve: m.curve,
       zoneH: m.zoneH, zoneS: m.zoneS, zoneL: m.zoneL,
       skinH: m.skinH, skinS: m.skinS, skinL: m.skinL, skinW: m.skinW, skinP: m.skinP,
+      dense: getDenseLut(m.lutId),
     }
     smCache.set(m, t)
   }
@@ -693,16 +892,91 @@ export function computeSmartMatch(foot: ImageData, ref: ImageData): SmartMatchRe
     }
   }
 
+  // ══ v5 PowerGrade: full-distribution transport → dense 3D LUT ══
+  // Solve IDT on the non-skin clouds, then replay the chain over an RGB lattice,
+  // folding in the skin layer + perceptual guards, to bake a high-fidelity LUT.
+  let lutId: string | undefined
+  let lutSize: number | undefined
+  let denseLut: DenseLut | undefined
+  {
+    const footCloud: number[] = [], refCloud: number[] = []
+    for (let i = 0; i < s.length; i += 3) {
+      if (softSkin(s[i], s[i + 1], s[i + 2]) > 0.5) continue
+      footCloud.push(s[i], s[i + 1], s[i + 2])
+    }
+    const rs = R.samples
+    for (let i = 0; i < rs.length; i += 3) {
+      if (softSkin(rs[i], rs[i + 1], rs[i + 2]) > 0.5) continue
+      refCloud.push(rs[i], rs[i + 1], rs[i + 2])
+    }
+    const steps = solveIDT(footCloud, refCloud)
+    if (steps.length) {
+      const N = 33
+      const lut = new Float32Array(N * N * N * 3)
+      let li = 0
+      for (let bi = 0; bi < N; bi++) for (let gi = 0; gi < N; gi++) for (let ri = 0; ri < N; ri++) {
+        const r0 = ri / (N - 1), g0 = gi / (N - 1), b0 = bi / (N - 1)
+        const [oL, oA, oB] = srgbToOklab(r0, g0, b0)
+        let [nL, nA, nB] = replayIDT(steps, oL, oA, oB)
+        const C0 = Math.hypot(oA, oB), Cn = Math.hypot(nA, nB)
+        if (C0 > 0.015 && Cn > 1e-5) {
+          let h0 = Math.atan2(oB, oA); if (h0 < 0) h0 += TAU
+          let hn = Math.atan2(nB, nA)
+          let Cf = Cn
+          // skin layer — anchor skin pixels to original hue/chroma (+ offsets);
+          // in protect mode skinH=0/skinS=1 so it pulls straight back to original
+          const sw = softSkin(oL, oA, oB) * skinW
+          if (sw > 0.001) {
+            const targetH = h0 + skinH, targetC = C0 * skinS
+            hn += angDiff(targetH, hn) * sw
+            Cf += (targetC - Cf) * sw
+            nL += (oL + skinL - nL) * sw * 0.6
+          }
+          // guard 1: hue swing cap weighted by chroma (near-neutrals may flip)
+          const capW = C0 >= 0.06 ? 1 : C0 <= 0.025 ? 0 : (() => { const t = (C0 - 0.025) / 0.035; return t * t * (3 - 2 * t) })()
+          if (capW > 0.05) {
+            const lim = HUE_CAP / capW
+            const dH = angDiff(hn, h0)
+            if (dH >  lim) hn = h0 + lim + (dH - lim) * 0.25
+            if (dH < -lim) hn = h0 - lim + (dH + lim) * 0.25
+          }
+          // guard 2: chroma soft-knee limiter (anti-neon)
+          const Cmax = C0 * 1.5 + 0.05
+          if (Cf > Cmax) Cf = Cmax + (Cf - Cmax) * 0.25
+          if (Cf > 0.34) Cf = 0.34
+          nA = Cf * Math.cos(hn); nB = Cf * Math.sin(hn)
+        } else {
+          const Cmax = C0 * 1.5 + 0.05
+          if (Cn > Cmax) { const k = (Cmax + (Cn - Cmax) * 0.25) / Cn; nA *= k; nB *= k }
+        }
+        const [mr, mg, mb] = oklabToSrgb(nL, nA, nB)
+        lut[li++] = clamp01(mr); lut[li++] = clamp01(mg); lut[li++] = clamp01(mb)
+      }
+      denseLut = { lut, size: N }
+      lutSize = N
+      lutId = registerDenseLut(lut, N)
+    }
+  }
+
+  // dense-LUT-aware apply for honest measurement (RGB-domain LUT, oklab in/out)
+  const applyMeasure = (oL: number, oA: number, oB: number): [number, number, number] => {
+    if (denseLut) {
+      const [sr, sg, sb] = oklabToSrgb(oL, oA, oB)
+      const [mr, mg, mb] = trilinear(denseLut, sr, sg, sb)
+      return srgbToOklab(mr, mg, mb)
+    }
+    return applyOklab(oL, oA, oB, mkTransform())
+  }
+
   // ── Confidence report: score the final result against the reference ──
   let confidence = 99
   const notes: string[] = []
   {
-    const tF = mkTransform()
     const histRes = new Float32Array(256)
     const resCells = new CellStats()
     for (let i = 0; i < s.length; i += 3) {
       const isSkin = softSkin(s[i], s[i + 1], s[i + 2]) > 0.5
-      const [nL, nA, nB] = applyOklab(s[i], s[i + 1], s[i + 2], tF)
+      const [nL, nA, nB] = applyMeasure(s[i], s[i + 1], s[i + 2])
       const Lc = clamp01(nL)
       histRes[Math.min(255, Math.round(Lc * 255))]++
       const C = Math.hypot(nA, nB)
@@ -744,6 +1018,7 @@ export function computeSmartMatch(foot: ImageData, ref: ImageData): SmartMatchRe
     if (uncovered >= 0.18 && worstUncov >= 0) {
       notes.push(`Referensi punya warna ${BAND_NAMES[worstUncov]} dominan yang tidak ada di footage — bagian look itu dilewati`)
     }
+    if (denseLut) notes.push('PowerGrade aktif — seluruh distribusi warna dicocokkan (bukan cuma rata-rata)')
     if (skinP === 1) notes.push('Referensi tanpa skin tone — warna kulit footage diproteksi otomatis')
     else if (skinW === 1 && skinFracR >= 0.01) notes.push('Skin tone di-match langsung ke skin referensi')
     if (confidence < 72) notes.push('Konten cukup berbeda — coba Match Strength 60–70% untuk hasil lebih natural')
@@ -782,5 +1057,6 @@ export function computeSmartMatch(foot: ImageData, ref: ImageData): SmartMatchRe
     derived,
     shadowCast, highCast,
     toneDesc: parts.join(' · ') || 'Balanced tone',
+    lutId, lutSize,
   }
 }

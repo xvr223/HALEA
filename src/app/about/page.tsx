@@ -162,17 +162,17 @@ export default function AboutPage() {
               Sepowerful apa <span className="italic text-accent">engine-nya?</span>
             </h2>
             <p className="text-t2 text-sm max-w-xl mx-auto leading-relaxed">
-              Smart Match Engine v4 dibangun di atas riset color science yang dipakai industri film
-              (Reinhard 2001, Pitié 2007) — lalu dikembangkan jauh melampauinya. Semua berjalan
-              di perangkatmu, dalam hitungan detik.
+              Smart Match Engine v5 &ldquo;PowerGrade&rdquo; dibangun di atas riset color science yang dipakai
+              industri film (Reinhard 2001, Pitié-Kokaram 2007) — lalu dikembangkan jauh melampauinya.
+              Semua berjalan di perangkatmu, dalam hitungan detik.
             </p>
           </div>
 
           <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
             {[
               {
-                icon: <Cpu size={16}/>, title: 'Optimal Transport Matching',
-                desc: 'Distribusi warna footage dipetakan ke referensi lewat transformasi Monge-Kantorovich di color space Oklab — matematika yang sama dengan paper riset color transfer film.',
+                icon: <Cpu size={16}/>, title: 'Full-Distribution Transport (IDT)',
+                desc: 'Bukan cuma menyamakan rata-rata warna — engine mencocokkan SELURUH distribusi warna lewat Iterative Distribution Transfer (Sliced-Wasserstein optimal transport), lalu di-bake jadi 3D LUT presisi tinggi. Metode riset film, di browser-mu.',
               },
               {
                 icon: <Sparkles size={16}/>, title: 'Zone Matrix 24 Sel',
@@ -201,7 +201,7 @@ export default function AboutPage() {
           <div className="mt-8 bg-s2 border border-b1 rounded-2xl p-5 overflow-x-auto">
             <p className="text-[9px] font-black tracking-widest uppercase text-t3 mb-3 text-center">Pipeline sekali klik</p>
             <div className="flex items-center justify-center gap-2 min-w-max mx-auto text-[10px] font-bold">
-              {['Log Decode', 'Global Transfer', 'Tone Curve', 'Zone Matrix', 'Skin Layer', 'Refinement', 'Guards', 'LUT'].map((step, i, arr) => (
+              {['Log Decode', 'Distribution Transfer', 'Zone Matrix', 'Skin Layer', 'Dense 3D LUT', 'Guards', 'Export'].map((step, i, arr) => (
                 <span key={step} className="flex items-center gap-2">
                   <span className={`px-3 py-1.5 rounded-full border ${i === arr.length - 1 ? 'bg-accent text-white border-accent' : 'bg-s3 border-b2 text-t2'}`}>{step}</span>
                   {i < arr.length - 1 && <span className="text-t3">→</span>}

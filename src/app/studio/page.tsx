@@ -343,6 +343,7 @@ export default function StudioPage() {
               bl4:m.bandL[4], bl5:m.bandL[5], bl6:m.bandL[6], bl7:m.bandL[7],
               skh:m.skinH, sks:m.skinS, skl:m.skinL, skw:m.skinW, skp:m.skinP,
               ...zp,
+              ...(m.lutId ? { lutId: m.lutId } : {}),   // v5 dense PowerGrade LUT
               amount:matchAmount } },
           { id:mkId(), type:'primary', enabled:true, params:{ ...ZERO_TRIM, ...(prevTrim||{}) } },
           { id:mkId(), type:'halation', enabled:m.halation>0.05, params:{ threshold:0.65, intensity:m.halation } },
