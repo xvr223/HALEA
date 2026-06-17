@@ -178,11 +178,12 @@ export default function AdminPage() {
           <p className="text-t3 text-xs mb-5">Berlaku langsung ke seluruh app — Shop, Studio, Matcher, AI.</p>
           <div className="grid grid-cols-2 gap-3 mb-5">
             {([
-              ['Harga / kredit (Rp)', 'creditPrice', settings.creditPrice],
-              ['Bonus user baru',     'welcomeCredits', settings.welcomeCredits],
-              ['Biaya Bake / Match',  'matchCost', settings.matchCost],
-              ['Biaya chat AI',       'aiChatCost', settings.aiChatCost],
-            ] as [string, 'creditPrice'|'welcomeCredits'|'matchCost'|'aiChatCost', number][]).map(([label, key, val]) => (
+              ['Harga / kredit (Rp)',      'creditPrice', settings.creditPrice],
+              ['Bonus user baru',         'welcomeCredits', settings.welcomeCredits],
+              ['Bake Standard (33³)',     'matchCost', settings.matchCost],
+              ['PowerGrade DaVinci (65³)','powerGradeCost', settings.powerGradeCost],
+              ['Biaya chat AI',           'aiChatCost', settings.aiChatCost],
+            ] as [string, 'creditPrice'|'welcomeCredits'|'matchCost'|'powerGradeCost'|'aiChatCost', number][]).map(([label, key, val]) => (
               <div key={key}>
                 <label className="text-[9px] font-black tracking-widest uppercase text-t3 block mb-1.5">{label}</label>
                 <Input type="number" min={0} value={val}

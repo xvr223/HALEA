@@ -13,7 +13,8 @@ export interface CreditPackage {
 interface SettingsState {
   creditPrice: number      // Rp per kredit (harga satuan / custom)
   welcomeCredits: number   // bonus kredit user baru
-  matchCost: number        // kredit per Bake LUT (Smart Match) & per LUT Shot Matcher
+  matchCost: number        // kredit per Bake LUT Standard (33³) & per LUT Shot Matcher
+  powerGradeCost: number   // kredit per DaVinci PowerGrade (65³ ultra)
   aiChatCost: number       // kredit per pesan HALEA AI
   packages: CreditPackage[]
   update: (p: Partial<Omit<SettingsState, 'packages' | 'update' | 'addPackage' | 'removePackage' | 'updatePackage'>>) => void
@@ -30,6 +31,7 @@ export const useSettingsStore = create<SettingsState>()(
       creditPrice: 2000,
       welcomeCredits: 10,
       matchCost: 1,
+      powerGradeCost: 3,
       aiChatCost: 1,
       packages: [
         { id: 'pk_starter', name: 'Starter',    credits: 25,  price: 39000 },

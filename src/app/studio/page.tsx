@@ -246,7 +246,8 @@ export default function StudioPage() {
 
   const router = useRouter()
   const { user: authUser, credits, useCredit } = useAuthStore()
-  const matchCost = useSettingsStore(s => s.matchCost)
+  const matchCost      = useSettingsStore(s => s.matchCost)
+  const powerGradeCost = useSettingsStore(s => s.powerGradeCost)
   const isAdmin = authUser?.role === 'admin'
 
   const splitRef = useRef<HTMLDivElement>(null)
@@ -507,6 +508,14 @@ export default function StudioPage() {
   const [dvBaking, setDvBaking] = useState(false)
   const downloadDaVinci = async () => {
     if (nodes.length===0) { toast('Match Colors dulu', 'warn'); return }
+    if (!authUser) {
+      toast('Daftar gratis dulu untuk export PowerGrade ✦', 'warn')
+      router.push('/login?next=/studio'); return
+    }
+    if (!useCredit(powerGradeCost)) {
+      toast(`Kredit kurang — PowerGrade butuh ${powerGradeCost} kredit. Top up di Shop 🛍`, 'err')
+      return
+    }
     setDvBaking(true)
     await new Promise(r=>setTimeout(r,30))
     const size = 65
@@ -787,9 +796,9 @@ export default function StudioPage() {
         <div className="p-3 border-t border-b1 flex flex-col gap-1.5">
           <button onClick={handleBake} disabled={nodes.length===0||baking}
             className={`w-full py-3 rounded-xl text-xs font-black uppercase tracking-widest transition-all flex items-center justify-center gap-2 ${nodes.length===0?'bg-s3 text-t3 cursor-not-allowed':baking?'bg-accent/50 text-white':'bg-accent text-white hover:bg-orange-400 shadow-lg shadow-accent/20'}`}>
-            {baking?<><span className="w-3.5 h-3.5 border-2 border-white/30 border-t-white rounded-full animate-spin"/>Baking...</>:<><Zap size={14}/>Bake LUT</>}
+            {baking?<><span className="w-3.5 h-3.5 border-2 border-white/30 border-t-white rounded-full animate-spin"/>Baking...</>:<><Zap size={14}/>Bake LUT{!isAdmin&&<span className="text-[8px] bg-white/20 px-1.5 py-0.5 rounded-full normal-case tracking-normal">{matchCost} kredit</span>}</>}
           </button>
-          <p className="text-[9px] text-t3 text-center">{nodes.length===0?'Match Colors dulu ↑':'Preview live · Bake untuk export'}</p>
+          <p className="text-[9px] text-t3 text-center">{nodes.length===0?'Match Colors dulu ↑':`Standard 33³ · ${matchCost} kredit · preview gratis`}</p>
         </div>
       </div>
 
@@ -871,7 +880,9 @@ export default function StudioPage() {
           {/* DaVinci PowerGrade — premium 65³ */}
           <button onClick={downloadDaVinci} disabled={!nodes.length||dvBaking}
             className="w-full py-2.5 rounded-xl text-[11px] font-bold border border-a2/40 bg-gradient-to-r from-a2/15 to-accent/10 text-a2 hover:from-a2/25 transition-all disabled:opacity-30 flex items-center justify-center gap-1.5">
-            {dvBaking ? <><span className="w-3 h-3 border-2 border-a2/30 border-t-a2 rounded-full animate-spin"/>Baking 65³...</> : <>🎬 DaVinci PowerGrade <span className="text-[8px] opacity-70">65³</span></>}
+            {dvBaking
+              ? <><span className="w-3 h-3 border-2 border-a2/30 border-t-a2 rounded-full animate-spin"/>Baking 65³...</>
+              : <>🎬 DaVinci PowerGrade <span className="text-[8px] opacity-70">65³</span>{!isAdmin&&<span className="text-[8px] bg-a2/20 px-1.5 py-0.5 rounded-full">{powerGradeCost} kredit</span>}</>}
           </button>
 
           {!lut&&!nodes.length ? (
@@ -1122,7 +1133,7 @@ export default function StudioPage() {
             {nodes.length>0&&(
               <button onClick={handleBake} disabled={baking}
                 className={`w-full py-4 rounded-2xl text-sm font-black uppercase tracking-widest transition-all active:scale-[0.97] flex items-center justify-center gap-2.5 ${baking?'bg-accent/40 text-white':'bg-accent text-white shadow-2xl shadow-accent/30'}`}>
-                {baking?<><span className="w-5 h-5 border-[3px] border-white/30 border-t-white rounded-full animate-spin"/>Baking...</>:<><Zap size={16}/>Bake LUT</>}
+                {baking?<><span className="w-5 h-5 border-[3px] border-white/30 border-t-white rounded-full animate-spin"/>Baking...</>:<><Zap size={16}/>Bake LUT — Standard 33³{!isAdmin&&<span className="text-[10px] bg-white/20 px-2 py-0.5 rounded-full normal-case tracking-normal">{matchCost} kredit</span>}</>}
               </button>
             )}
 
@@ -1248,7 +1259,7 @@ export default function StudioPage() {
             {nodes.length>0&&(
               <button onClick={downloadDaVinci} disabled={dvBaking}
                 className="w-full py-4 rounded-2xl text-sm font-bold border border-a2/40 bg-gradient-to-r from-a2/15 to-accent/10 text-a2 active:scale-[0.97] transition-all flex items-center justify-center gap-2 disabled:opacity-40">
-                {dvBaking ? <><span className="w-4 h-4 border-2 border-a2/30 border-t-a2 rounded-full animate-spin"/>Baking PowerGrade 65³...</> : <>🎬 DaVinci PowerGrade — 65³ Ultra</>}
+                {dvBaking ? <><span className="w-4 h-4 border-2 border-a2/30 border-t-a2 rounded-full animate-spin"/>Baking PowerGrade 65³...</> : <>🎬 DaVinci PowerGrade — 65³ Ultra{!isAdmin&&<span className="text-[10px] bg-a2/20 px-2 py-0.5 rounded-full">{powerGradeCost} kredit</span>}</>}
               </button>
             )}
 

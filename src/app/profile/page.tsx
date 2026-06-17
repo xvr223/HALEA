@@ -12,7 +12,7 @@ interface LearnProgress { done: string[]; xp: number; missions: string[] }
 
 export default function ProfilePage() {
   const { user, credits, users, logout, adminDeleteUser, redeemCode } = useAuthStore()
-  const { matchCost, aiChatCost, creditPrice } = useSettingsStore()
+  const { matchCost, powerGradeCost, aiChatCost, creditPrice } = useSettingsStore()
   const router = useRouter()
   const [learn, setLearn] = useState<LearnProgress>({ done: [], xp: 0, missions: [] })
 
@@ -79,7 +79,7 @@ export default function ProfilePage() {
           </div>
           <p className="font-mono text-4xl font-bold text-ok mb-1">{isAdmin ? '∞' : credits}</p>
           <p className="text-[11px] text-t3 leading-relaxed mb-4">
-            Bake LUT: {matchCost} kredit · LUT Matcher: {matchCost} kredit · Chat AI: {aiChatCost} kredit
+            Bake Standard 33³: {matchCost} kredit · DaVinci PowerGrade 65³: {powerGradeCost} kredit · LUT Matcher: {matchCost} kredit · Chat AI: {aiChatCost} kredit
             {!isAdmin && <><br/>Harga satuan: {rp(creditPrice)}/kredit</>}
           </p>
           {!isAdmin && (
