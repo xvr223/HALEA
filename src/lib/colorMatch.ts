@@ -398,10 +398,12 @@ function build1DMap(fv: Float32Array, rv: Float32Array): IDT1DMap {
   for (let k = 0; k <= IDT_KNOTS; k++) { const p = k / IDT_KNOTS; dom[k] = q(fs, p); out[k] = q(rs, p) }
   // ensure strictly increasing domain for safe interpolation
   for (let k = 1; k <= IDT_KNOTS; k++) if (dom[k] <= dom[k - 1]) dom[k] = dom[k - 1] + 1e-6
-  // light smoothing of the displacement keeps the map kink-free (regularization)
+  // smooth the displacement (2 passes) to keep each 1D map gentle & kink-free —
+  // less per-iteration sharpness → fewer color breaks in the composed transport
   const disp = new Float32Array(IDT_KNOTS + 1)
   for (let k = 0; k <= IDT_KNOTS; k++) disp[k] = out[k] - dom[k]
-  for (let k = 1; k < IDT_KNOTS; k++) disp[k] = disp[k - 1] * 0.18 + disp[k] * 0.64 + disp[k + 1] * 0.18
+  for (let pass = 0; pass < 2; pass++)
+    for (let k = 1; k < IDT_KNOTS; k++) disp[k] = disp[k - 1] * 0.2 + disp[k] * 0.6 + disp[k + 1] * 0.2
   for (let k = 0; k <= IDT_KNOTS; k++) out[k] = dom[k] + disp[k]
   return { dom, out }
 }
@@ -528,7 +530,35 @@ function bakeDenseFromSteps(steps: IDTStep[], sk: SkinLayer, size: number): Floa
     const [mr, mg, mb] = oklabToSrgb(nL, nA, nB)
     lut[li++] = clamp01(mr); lut[li++] = clamp01(mg); lut[li++] = clamp01(mb)
   }
+  // Regularize: matching the full distribution can make the transport "sharp"
+  // in spots → banding/color-break on smooth gradients (sky, skin). A light
+  // separable 3D blur of the LUT field removes those breaks while keeping the
+  // look — the standard IDT post-processing (Pitié 2007).
+  smoothLut3D(lut, N, 0.16)
   return lut
+}
+
+// separable [w, 1−2w, w] blur along each LUT axis, edge-clamped (corners stay put)
+function smoothLut3D(lut: Float32Array, N: number, w: number) {
+  const c = 1 - 2 * w
+  const at = (ri: number, gi: number, bi: number, ch: number) => (bi * N * N + gi * N + ri) * 3 + ch
+  const tmp = new Float32Array(lut.length)
+  // R axis
+  for (let bi = 0; bi < N; bi++) for (let gi = 0; gi < N; gi++) for (let ri = 0; ri < N; ri++) {
+    const lo = Math.max(0, ri - 1), hi = Math.min(N - 1, ri + 1)
+    for (let ch = 0; ch < 3; ch++) tmp[at(ri,gi,bi,ch)] = w*lut[at(lo,gi,bi,ch)] + c*lut[at(ri,gi,bi,ch)] + w*lut[at(hi,gi,bi,ch)]
+  }
+  // G axis
+  for (let bi = 0; bi < N; bi++) for (let gi = 0; gi < N; gi++) for (let ri = 0; ri < N; ri++) {
+    const lo = Math.max(0, gi - 1), hi = Math.min(N - 1, gi + 1)
+    for (let ch = 0; ch < 3; ch++) lut[at(ri,gi,bi,ch)] = w*tmp[at(ri,lo,bi,ch)] + c*tmp[at(ri,gi,bi,ch)] + w*tmp[at(ri,hi,bi,ch)]
+  }
+  // B axis
+  for (let bi = 0; bi < N; bi++) for (let gi = 0; gi < N; gi++) for (let ri = 0; ri < N; ri++) {
+    const lo = Math.max(0, bi - 1), hi = Math.min(N - 1, bi + 1)
+    for (let ch = 0; ch < 3; ch++) tmp[at(ri,gi,bi,ch)] = w*lut[at(ri,gi,lo,ch)] + c*lut[at(ri,gi,bi,ch)] + w*lut[at(ri,gi,hi,ch)]
+  }
+  lut.set(tmp)
 }
 
 // ── Dense LUT registry (heavy data kept out of node params / HALEA Codes) ─────

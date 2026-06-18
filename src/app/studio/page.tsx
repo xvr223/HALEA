@@ -538,23 +538,41 @@ export default function StudioPage() {
     toast('✓ CapCut LUT ready! Import di: Filter → + → Import LUT')
   }
 
-  // Lightroom Mobile .xmp preset
+  // Lightroom Mobile .xmp preset — FIT the actual v5 grade into Lightroom's
+  // parameter model. The look lives in a dense 3D LUT that XMP can't carry, so
+  // we SAMPLE the real transform and express it as per-channel RGB tone curves
+  // (capture contrast, faded blacks & per-tone color cast = the bulk of a look)
+  // + a global saturation/exposure trim. Far more faithful than the old
+  // mean-shift slider guess (which was ≈0 in Smart Match mode).
   const downloadXMP = () => {
-    // reads from grade (not the primary node) so it works in Smart Match mode too,
-    // where nodes carry a matrix instead of classic slider params
-    if (!grade) { toast('Match Colors dulu', 'warn'); return }
-    // smart mode: derived match params + manual trim on top; basic mode: the
-    // primary node already holds analyzed values + user edits
-    const trim = nodes.find(n=>n.type==='primary')?.params as Record<string,number>|undefined
-    const tv = (k:string, gv:number) => grade.matched ? gv + (trim?.[k]||0) : (trim?.[k] ?? gv)
-    const temp    = Math.round(6500 + tv('temp',grade.temp)*3500)   // Kelvin 3000–10000
-    const tint    = Math.round(-tv('tint',grade.tint)*150)           // LR tint –150…+150
-    const expo    = (tv('gamma',grade.gamma)*1.5).toFixed(2)          // Exposure –5…+5
-    const con     = Math.round(tv('con',grade.con)*100)               // Contrast –100…+100
-    const shadows = Math.round(tv('lift',grade.lift)*60)              // Shadows (lift = open shadows)
-    const blacks  = Math.round(tv('lift',grade.lift)*400)             // Blacks (lift = raise black floor)
-    const sat     = Math.round(tv('sat',grade.sat)*100)               // Saturation –100…+100
-    const name    = lutName||'HALEA_Preset'
+    if (!nodes.length) { toast('Match Colors dulu', 'warn'); return }
+    const samp = (r:number,g:number,b:number) => applyNodes(r,g,b,nodes)   // full grade incl. dense LUT + fine-tune
+
+    // Per-channel tone curves from a neutral ramp: out_ch = grade(x,x,x)[ch]
+    const K = 12
+    const ptsR:string[]=[], ptsG:string[]=[], ptsB:string[]=[]
+    for (let i=0;i<=K;i++){
+      const x=i/K
+      const [r,g,b]=samp(x,x,x)
+      const ix=Math.round(x*255)
+      ptsR.push(`${ix}, ${Math.round(clamp(r)*255)}`)
+      ptsG.push(`${ix}, ${Math.round(clamp(g)*255)}`)
+      ptsB.push(`${ix}, ${Math.round(clamp(b)*255)}`)
+    }
+
+    // Global saturation trim — measured from how saturated swatches change
+    // (per-channel curves don't carry cross-channel sat well, so add a nudge)
+    const swatches:[number,number,number][]=[[0.82,0.20,0.20],[0.20,0.70,0.32],[0.20,0.42,0.85],[0.85,0.72,0.22],[0.55,0.25,0.7]]
+    let sIn=1e-4, sOut=1e-4
+    for (const [r,g,b] of swatches){
+      sIn += rgbToHsl(r,g,b)[1]
+      const [or,og,ob]=samp(r,g,b)
+      sOut += rgbToHsl(or,og,ob)[1]
+    }
+    const satUI = Math.round(clamp(sOut/sIn-1, -1, 1)*55)             // −55…55
+
+    const seq = (pts:string[]) => pts.map(p=>`      <rdf:li>${p}</rdf:li>`).join('\n')
+    const name = lutName||'HALEA Look'
     const xmp = `<?xpacket begin="" id="W5M0MpCehiHzreSzNTczkc9d"?>
 <x:xmpmeta xmlns:x="adobe:ns:meta/">
   <rdf:RDF xmlns:rdf="http://www.w3.org/1999/02/22-rdf-syntax-ns#">
@@ -573,28 +591,56 @@ export default function StudioPage() {
       crs:CameraModelRestriction=""
       crs:Copyright=""
       crs:ContactInfo=""
+      crs:Version="15.0"
       crs:ProcessVersion="11.0"
-      crs:WhiteBalance="Custom"
-      crs:Temperature="${temp}"
-      crs:Tint="${tint}"
-      crs:Exposure2012="${expo}"
-      crs:Contrast2012="${con}"
-      crs:Highlights2012="0"
-      crs:Shadows2012="${shadows}"
-      crs:Whites2012="0"
-      crs:Blacks2012="${blacks}"
-      crs:Clarity2012="0"
+      crs:WhiteBalance="As Shot"
+      crs:Saturation="${satUI}"
       crs:Vibrance="0"
-      crs:Saturation="${sat}"
-    />
+      crs:ParametricShadows="0"
+      crs:ParametricDarks="0"
+      crs:ParametricLights="0"
+      crs:ParametricHighlights="0"
+      crs:ToneCurveName2012="Linear"
+      crs:HasSettings="True">
+      <crs:Name>
+        <rdf:Alt><rdf:li xml:lang="x-default">${name}</rdf:li></rdf:Alt>
+      </crs:Name>
+      <crs:ShortName>
+        <rdf:Alt><rdf:li xml:lang="x-default">${name}</rdf:li></rdf:Alt>
+      </crs:ShortName>
+      <crs:Group>
+        <rdf:Alt><rdf:li xml:lang="x-default">HALEA</rdf:li></rdf:Alt>
+      </crs:Group>
+      <crs:ToneCurvePV2012>
+        <rdf:Seq>
+          <rdf:li>0, 0</rdf:li>
+          <rdf:li>255, 255</rdf:li>
+        </rdf:Seq>
+      </crs:ToneCurvePV2012>
+      <crs:ToneCurvePV2012Red>
+        <rdf:Seq>
+${seq(ptsR)}
+        </rdf:Seq>
+      </crs:ToneCurvePV2012Red>
+      <crs:ToneCurvePV2012Green>
+        <rdf:Seq>
+${seq(ptsG)}
+        </rdf:Seq>
+      </crs:ToneCurvePV2012Green>
+      <crs:ToneCurvePV2012Blue>
+        <rdf:Seq>
+${seq(ptsB)}
+        </rdf:Seq>
+      </crs:ToneCurvePV2012Blue>
+    </rdf:Description>
   </rdf:RDF>
 </x:xmpmeta>
 <?xpacket end="w"?>`
     const a=document.createElement('a')
     // octet-stream forces download on iOS instead of opening as text viewer
     a.href=URL.createObjectURL(new Blob([xmp],{type:'application/octet-stream'}))
-    a.download=name+'.xmp'; a.click()
-    toast('✓ Preset .xmp siap — import di Lightroom Mobile')
+    a.download=(name.replace(/\s+/g,'_'))+'.xmp'; a.click()
+    toast('✓ Preset .xmp siap — look ikut ter-export. Import di Lightroom.')
   }
 
   // Share Card — convert footSrc blob→dataURL, store in sessionStorage, open /share
