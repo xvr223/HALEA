@@ -101,14 +101,16 @@ const smoothRange = (v: number, a: number, b: number, c: number, d: number) => {
   if (v > c) { const t = (d - v) / (d - c); return t * t * (3 - 2 * t) }
   return 1
 }
+// v6: wider, more forgiving skin locus — catches shadowed & slightly
+// desaturated skin (the cases that used to slip through and go grey-green)
 export function softSkin(L: number, A: number, B: number): number {
   const C = Math.hypot(A, B)
-  if (C < 0.02) return 0
+  if (C < 0.015) return 0
   let h = Math.atan2(B, A) * 180 / Math.PI
   if (h < 0) h += 360
-  return smoothRange(h, 10, 25, 65, 82)
-       * smoothRange(C, 0.025, 0.05, 0.15, 0.21)
-       * smoothRange(L, 0.18, 0.30, 0.85, 0.95)
+  return smoothRange(h, 8, 22, 70, 92)
+       * smoothRange(C, 0.018, 0.04, 0.17, 0.24)
+       * smoothRange(L, 0.15, 0.28, 0.90, 0.97)
 }
 
 // ── Tone curve helpers ────────────────────────────────────────────────────────
@@ -351,7 +353,7 @@ function castName(da: number, db: number): string {
 // so we replay it over an RGB lattice to bake a dense 3D LUT.
 // ══════════════════════════════════════════════════════════════════════════════
 
-const IDT_ITERS = 24
+const IDT_ITERS = 16            // v6: fewer iters — MKL pre-aligns, IDT only refines residual
 const IDT_KNOTS = 28
 const IDT_MAXN  = 7000          // subsample cap per cloud
 const IDT_SEED  = 0x9e3779b1    // fixed → deterministic results
@@ -487,19 +489,55 @@ function replayIDT(steps: IDTStep[], L: number, A: number, B: number): [number, 
   return [x, y, z]
 }
 
-// Replay the IDT chain over an RGB lattice → dense LUT, folding in the skin
-// layer + perceptual guards. Used for the live 33³ preview LUT and, on demand,
-// for high-resolution (65³) DaVinci PowerGrade export.
+// v6: gamut-aware conversion. Out-of-gamut Oklab → reduce CHROMA toward the
+// achromatic axis (preserving hue & lightness) until in [0,1], instead of
+// per-channel hard clamp (which shifts hue and causes "warna pecah" on vivid
+// colors). A soft inset margin keeps highlights from hard-edging.
+function inGamut(r: number, g: number, b: number): boolean {
+  return r >= -0.0015 && r <= 1.0015 && g >= -0.0015 && g <= 1.0015 && b >= -0.0015 && b <= 1.0015
+}
+function oklabToSrgbGamut(L: number, a: number, b: number): [number, number, number] {
+  const [r0, g0, b0] = oklabToSrgb(L, a, b)
+  if (inGamut(r0, g0, b0)) return [clamp01(r0), clamp01(g0), clamp01(b0)]
+  let lo = 0, hi = 1
+  for (let it = 0; it < 14; it++) {
+    const mid = (lo + hi) / 2
+    const [r, g, b2] = oklabToSrgb(L, a * mid, b * mid)
+    if (inGamut(r, g, b2)) lo = mid; else hi = mid
+  }
+  const [r, g, b2] = oklabToSrgb(L, a * lo, b * lo)
+  return [clamp01(r), clamp01(g), clamp01(b2)]
+}
+
+// Replay MKL pre-align ∘ IDT residual over an RGB lattice → dense LUT, folding
+// in the skin layer + perceptual guards + gamut compression. Used for the live
+// 33³ preview LUT and the 65³ Precision Grade export.
 interface SkinLayer { skinW: number; skinH: number; skinS: number; skinL: number }
-function bakeDenseFromSteps(steps: IDTStep[], sk: SkinLayer, size: number): Float32Array {
+interface Affine { T: number[]; muF: number[]; muR: number[] }
+function bakeDenseFromSteps(steps: IDTStep[], sk: SkinLayer, size: number, pre?: Affine): Float32Array {
   const N = size
   const lut = new Float32Array(N * N * N * 3)
   let li = 0
   for (let bi = 0; bi < N; bi++) for (let gi = 0; gi < N; gi++) for (let ri = 0; ri < N; ri++) {
     const r0 = ri / (N - 1), g0 = gi / (N - 1), b0 = bi / (N - 1)
     const [oL, oA, oB] = srgbToOklab(r0, g0, b0)
-    const [nL0, nA0, nB0] = replayIDT(steps, oL, oA, oB)
-    let nL = nL0, nA = nA0, nB = nB0
+    // v6: smooth MKL linear transport first (does the bulk), then IDT refines
+    let pL = oL, pA = oA, pB = oB
+    if (pre) {
+      const dL = oL - pre.muF[0], dA = oA - pre.muF[1], dB = oB - pre.muF[2]
+      pL = pre.T[0]*dL + pre.T[1]*dA + pre.T[2]*dB + pre.muR[0]
+      pA = pre.T[3]*dL + pre.T[4]*dA + pre.T[5]*dB + pre.muR[1]
+      pB = pre.T[6]*dL + pre.T[7]*dA + pre.T[8]*dB + pre.muR[2]
+    }
+    const [nL0, nA0, nB0] = replayIDT(steps, pL, pA, pB)
+    // v6: damp the IDT residual toward the smooth MKL base. IDT can over-stretch
+    // tones when the reference is bimodal (crushed shadows + bright highlights),
+    // creating steep slopes → banding. Keeping it anchored to the linear base
+    // caps that steepness while retaining most of the distribution refinement.
+    const IDT_W = 0.7
+    let nL = pL + (nL0 - pL) * IDT_W
+    let nA = pA + (nA0 - pA) * IDT_W
+    let nB = pB + (nB0 - pB) * IDT_W
     const C0 = Math.hypot(oA, oB), Cn = Math.hypot(nA, nB)
     if (C0 > 0.015 && Cn > 1e-5) {
       let h0 = Math.atan2(oB, oA); if (h0 < 0) h0 += TAU
@@ -511,6 +549,9 @@ function bakeDenseFromSteps(steps: IDTStep[], sk: SkinLayer, size: number): Floa
         hn += angDiff(targetH, hn) * sw
         Cf += (targetC - Cf) * sw
         nL += (oL + sk.skinL - nL) * sw * 0.6
+        // v6: skin never desaturates to grey — keep ≥82% of original chroma
+        const floor = C0 * 0.82
+        if (Cf < floor) Cf += (floor - Cf) * sw
       }
       const capW = C0 >= 0.06 ? 1 : C0 <= 0.025 ? 0 : (() => { const t = (C0 - 0.025) / 0.035; return t * t * (3 - 2 * t) })()
       if (capW > 0.05) {
@@ -527,14 +568,14 @@ function bakeDenseFromSteps(steps: IDTStep[], sk: SkinLayer, size: number): Floa
       const Cmax = C0 * 1.5 + 0.05
       if (Cn > Cmax) { const k = (Cmax + (Cn - Cmax) * 0.25) / Cn; nA *= k; nB *= k }
     }
-    const [mr, mg, mb] = oklabToSrgb(nL, nA, nB)
-    lut[li++] = clamp01(mr); lut[li++] = clamp01(mg); lut[li++] = clamp01(mb)
+    const [mr, mg, mb] = oklabToSrgbGamut(nL, nA, nB)
+    lut[li++] = mr; lut[li++] = mg; lut[li++] = mb
   }
   // Regularize: matching the full distribution can make the transport "sharp"
   // in spots → banding/color-break on smooth gradients (sky, skin). A light
   // separable 3D blur of the LUT field removes those breaks while keeping the
   // look — the standard IDT post-processing (Pitié 2007).
-  smoothLut3D(lut, N, 0.16)
+  smoothLut3D(lut, N, 0.18)
   return lut
 }
 
@@ -985,11 +1026,24 @@ export function computeSmartMatch(foot: ImageData, ref: ImageData): SmartMatchRe
       if (softSkin(rs[i], rs[i + 1], rs[i + 2]) > 0.5) continue
       refCloud.push(rs[i], rs[i + 1], rs[i + 2])
     }
-    const steps = solveIDT(footCloud, refCloud)
+    // v6: pre-align footage cloud through the smooth MKL transport, then solve
+    // IDT only on the RESIDUAL. MKL handles the bulk (mean+covariance) cleanly;
+    // IDT just refines the leftover distribution shape → far smoother result.
+    const pre: Affine = { T, muF, muR }
+    const footAligned: number[] = []
+    for (let i = 0; i < footCloud.length; i += 3) {
+      const dL = footCloud[i] - muF[0], dA = footCloud[i + 1] - muF[1], dB = footCloud[i + 2] - muF[2]
+      footAligned.push(
+        T[0]*dL + T[1]*dA + T[2]*dB + muR[0],
+        T[3]*dL + T[4]*dA + T[5]*dB + muR[1],
+        T[6]*dL + T[7]*dA + T[8]*dB + muR[2],
+      )
+    }
+    const steps = solveIDT(footAligned, refCloud)
     if (steps.length) {
-      const N = 33                          // transport grid; DaVinci export upsamples to 65³
+      const N = 33                          // transport grid; Precision export upsamples to 65³
       const skin: SkinLayer = { skinW, skinH, skinS, skinL }
-      const lut = bakeDenseFromSteps(steps, skin, N)
+      const lut = bakeDenseFromSteps(steps, skin, N, pre)
       denseLut = { lut, size: N }
       lutSize = N
       lutId = registerDenseLut(lut, N)

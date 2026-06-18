@@ -162,7 +162,7 @@ export default function AboutPage() {
               Sepowerful apa <span className="italic text-accent">engine-nya?</span>
             </h2>
             <p className="text-t2 text-sm max-w-xl mx-auto leading-relaxed">
-              Smart Match Engine v5 dibangun di atas riset color science yang dipakai
+              Smart Match Engine v6 dibangun di atas riset color science yang dipakai
               industri film (Reinhard 2001, Pitié-Kokaram 2007) — lalu dikembangkan jauh melampauinya.
               Semua berjalan di perangkatmu, dalam hitungan detik.
             </p>
@@ -277,10 +277,16 @@ export default function AboutPage() {
                   flaw: 'Masih mencocokkan momen statistik (rata-rata + kovarians), belum seluruh distribusi warna.',
                 },
                 {
-                  v: 'V5', tag: 'Full-Distribution Transport', cur: true,
+                  v: 'V5', tag: 'Full-Distribution Transport', cur: false,
                   problem: 'Mencocokkan rata-rata saja punya plafon akurasi. Untuk look yang benar-benar "nempel" perlu mencocokkan SELURUH distribusi warna.',
                   fix: 'Iterative Distribution Transfer (Sliced-Wasserstein optimal transport, Pitié-Kokaram 2007): proyeksikan kedua cloud warna ke puluhan sumbu 3D acak, selesaikan optimal transport 1D per sumbu, ulangi sampai konvergen — lalu bake jadi dense 3D LUT presisi tinggi.',
-                  flaw: 'Hasil: 77% lebih dekat ke distribusi referensi (vs 53% di V4). Inilah engine yang dipakai HALEA sekarang.',
+                  flaw: '77% lebih dekat ke distribusi referensi (vs 53% di V4) — tapi distribusi yang ekstrem bisa bikin transport "tajam" → warna pecah/banding di gradien halus (langit, kulit).',
+                },
+                {
+                  v: 'V6', tag: 'Hybrid Transport — Smooth & Skin-Safe', cur: true,
+                  problem: 'Transport distribusi penuh kadang terlalu tajam → banding di langit & kulit, dan kulit bisa keabuan/kehijauan kalau referensi punya warna dominan lain.',
+                  fix: 'Arsitektur hybrid: transport linear MKL yang mulus mengerjakan bulk-nya dulu, IDT cuma me-refine sisa distribusi (di-damp). Plus gamut compression (turunkan chroma, bukan clip per-channel → hue tidak pecah) + skin guard baru yang lebih lebar & menjaga kulit tidak pernah jadi abu.',
+                  flaw: 'Hasil: transport 26% lebih mulus, kulit terjaga warnanya, nol warna out-of-gamut. Inilah engine yang dipakai HALEA sekarang.',
                 },
               ].map((e) => (
                 <div key={e.v} className="relative sm:pl-14">
@@ -346,7 +352,7 @@ export default function AboutPage() {
       <section className="border-t border-b border-b1 bg-s2">
         <div className="max-w-5xl mx-auto px-6 py-14 grid grid-cols-2 md:grid-cols-4 gap-8 text-center">
           {[
-            { n: 'V5',     label: 'Generasi engine sekarang' },
+            { n: 'V6',     label: 'Generasi engine sekarang' },
             { n: '0',      label: 'Foto di-upload ke server' },
             { n: '8',      label: 'Format log — rumus exact' },
             { n: '24',     label: 'Sel koreksi per match' },
