@@ -11,7 +11,7 @@ import { encodeGrade, decodeGrade, copyText } from '@/lib/haleaCode'
 import { LogProfile, LOG_PROFILES, logToDisplay, convertImageData, computeAutoGain, detectLogProfile } from '@/lib/logProfiles'
 
 // ── Types ─────────────────────────────────────────────────────────────────────
-type NodeType = 'primary' | 'look' | 'halation' | 'match'
+type NodeType = 'primary' | 'look' | 'halation' | 'match' | 'split'
 interface GradeNode {
   id: string; type: NodeType; enabled: boolean
   params: Record<string, number | string>
@@ -30,6 +30,19 @@ function rgbToHsl(r: number, g: number, b: number): [number, number, number] {
   else if (max===g) h=((b-r)/d+2)/6
   else              h=((r-g)/d+4)/6
   return [h,s,l]
+}
+
+function hslToRgb(h: number, s: number, l: number): [number, number, number] {
+  if (s===0) return [l,l,l]
+  const q = l<0.5 ? l*(1+s) : l+s-l*s, p = 2*l-q
+  const hue = (t: number) => { t=(t+1)%1; if(t<1/6)return p+(q-p)*6*t; if(t<1/2)return q; if(t<2/3)return p+(q-p)*(2/3-t)*6; return p }
+  return [hue(h+1/3), hue(h), hue(h-1/3)]
+}
+// zero-luma chroma direction for a hue (deg) — tints toward that hue w/o shifting brightness
+function hueDir(hueDeg: number): [number, number, number] {
+  const [r,g,b] = hslToRgb(((hueDeg%360)+360)%360/360, 1, 0.5)
+  const lm = luma(r,g,b)
+  return [r-lm, g-lm, b-lm]
 }
 
 // Detects skin-tone pixels (red-orange hue, moderate sat/lightness)
@@ -117,6 +130,16 @@ function applyNodes(r:number,g:number,b:number,nodes:GradeNode[]):[number,number
       nr=clamp(0.5+(nr-0.5)*(1+lc));ng=clamp(0.5+(ng-0.5)*(1+lc));nb=clamp(0.5+(nb-0.5)*(1+lc))
       nr=clamp(nr+ll*(1-nr)+lw*0.25);ng=clamp(ng+ll*(1-ng));nb=clamp(nb+ll*(1-nb)-lw*0.18)
       r=r+(nr-r)*amount;g=g+(ng-g)*amount;b=b+(nb-b)*amount
+    }
+    if(node.type==='split'){
+      // 3-way split tone: tint shadows & highlights toward target hues by luma.
+      // The soul of film looks (Godfather amber, teal-orange, Matrix green).
+      const lh=luma(r,g,b)
+      const bal=(p.balance as number)||0
+      const sw=clamp(1-lh*2+bal), hw=clamp(lh*2-1-bal)               // shadow / highlight weights
+      const sd=hueDir(p.shHue as number), hd=hueDir(p.hiHue as number)
+      const ss=(p.shSat as number)*sw, hs=(p.hiSat as number)*hw
+      r=clamp(r+sd[0]*ss+hd[0]*hs); g=clamp(g+sd[1]*ss+hd[1]*hs); b=clamp(b+sd[2]*ss+hd[2]*hs)
     }
     if(node.type==='halation'){
       const thr=1-(p.threshold as number),lh=luma(r,g,b)
@@ -231,6 +254,9 @@ export default function StudioPage() {
   const [skinGuard, setSkinGuard] = useState(false)
   const [matchAmount, setMatchAmount] = useState(0.8)
   const [codeInput,  setCodeInput]  = useState('')
+  const [aiMode,     setAiMode]     = useState<'ref'|'prompt'>('ref')
+  const [promptText, setPromptText] = useState('')
+  const [promptLoading, setPromptLoading] = useState(false)
   const [logProfile, setLogProfile] = useState<LogProfile>('rec709')
   const [autoExp,    setAutoExp]    = useState(true)
 
@@ -245,9 +271,10 @@ export default function StudioPage() {
   const [mobileTrimOpen, setMobileTrimOpen] = useState(false)
 
   const router = useRouter()
-  const { user: authUser, credits, useCredit } = useAuthStore()
+  const { user: authUser, credits, useCredit, addCredits } = useAuthStore()
   const matchCost      = useSettingsStore(s => s.matchCost)
   const powerGradeCost = useSettingsStore(s => s.powerGradeCost)
+  const aiChatCost     = useSettingsStore(s => s.aiChatCost)
   const isAdmin = authUser?.role === 'admin'
 
   const splitRef = useRef<HTMLDivElement>(null)
@@ -377,6 +404,59 @@ export default function StudioPage() {
   const handleStrength = (v:number) => {
     setMatchAmount(v)
     setNodes(prev=>prev.map(n=>n.type==='match'?{...n,params:{...n.params,amount:v}}:n))
+  }
+
+  // ── AI Look: text prompt → creative grade (no reference photo needed) ──────
+  const generateFromPrompt = async () => {
+    if (!authUser) { toast('Daftar gratis dulu untuk AI Look ✦', 'warn'); router.push('/login?next=/studio'); return }
+    if (!promptText.trim()) { toast('Tulis look yang kamu mau dulu', 'warn'); return }
+    if (!useCredit(aiChatCost)) { toast(`Kredit AI habis — generate butuh ${aiChatCost} kredit. Beli di Shop 🛍`, 'err'); return }
+    setPromptLoading(true)
+    try {
+      // footage awareness — let the AI compensate for the current footage state
+      let ctx = ''
+      if (footImg) {
+        const d = footImg.data; let sr=0,sg=0,sb=0,n=0
+        for (let i=0;i<d.length;i+=64){ sr+=d[i];sg+=d[i+1];sb+=d[i+2];n++ }
+        const ar=sr/n, ag=sg/n, ab=sb/n, br=(ar+ag+ab)/3/255
+        const warm = ar>ab+8?'cenderung warm':ab>ar+8?'cenderung cool':'netral'
+        ctx = ` Kondisi footage: brightness ${(br).toFixed(2)} (0=gelap,1=terang), white balance ${warm}. Sesuaikan koreksi agar look benar.`
+      }
+      const system = `Kamu colorist film profesional. User minta look sinematik untuk footage mereka. Balas HANYA JSON valid (tanpa teks/penjelasan lain), skema persis:
+{"name":"string singkat","temp":0,"tint":0,"exposure":0,"contrast":0,"saturation":0,"lift":0,"shadowHue":0,"shadowSat":0,"highlightHue":0,"highlightSat":0,"halation":0,"desc":"string singkat"}
+Rentang: temp -0.3..0.3 (+=warm), tint -0.2..0.2 (+=magenta), exposure -0.2..0.2, contrast -0.3..0.3, saturation -0.4..0.3, lift 0..0.12 (angkat hitam/faded), shadowHue & highlightHue 0-360, shadowSat & highlightSat 0..0.4, halation 0..0.3 (glow film).
+Acuan hue: 30-40=amber, 45-55=emas, 195-210=teal, 220-240=biru, 110-130=hijau, 15-25=oranye.
+Contoh look: Godfather=warm amber, saturasi rendah, blacks lifted, highlight emas, contrast lembut. Teal & Orange blockbuster=shadow teal(200) highlight oranye(30) contrast tinggi. The Matrix=hijau(120) di semua. Moody noir=cool, contrast tinggi, desaturated.${ctx}`
+      const res = await fetch('/api/chat', { method:'POST', headers:{'Content-Type':'application/json'}, body: JSON.stringify({ system, messages:[{role:'user',content:promptText}], max_tokens:400 }) })
+      const data = await res.json()
+      if (data.error) throw new Error(data.error)
+      const txt = data.choices?.[0]?.message?.content || ''
+      const m = txt.match(/\{[\s\S]*\}/)
+      if (!m) throw new Error('parse')
+      const j = JSON.parse(m[0])
+      const num = (v:unknown,lo:number,hi:number,d=0)=>{ const x=typeof v==='number'?v:parseFloat(String(v)); return isNaN(x)?d:Math.max(lo,Math.min(hi,x)) }
+      const prim = { lift:num(j.lift,0,0.12), gamma:num(j.exposure,-0.2,0.2), temp:num(j.temp,-0.3,0.3), tint:num(j.tint,-0.2,0.2), con:num(j.contrast,-0.3,0.3), sat:num(j.saturation,-0.4,0.3) }
+      const hal = num(j.halation,0,0.3)
+      const newNodes:GradeNode[] = [
+        { id:mkId(), type:'primary', enabled:true, params:{...prim} },
+        { id:mkId(), type:'split',   enabled:true, params:{ shHue:num(j.shadowHue,0,360,30), shSat:num(j.shadowSat,0,0.4), hiHue:num(j.highlightHue,0,360,45), hiSat:num(j.highlightSat,0,0.4), balance:0 } },
+        { id:mkId(), type:'halation',enabled:hal>0.04, params:{ threshold:0.65, intensity:hal } },
+      ]
+      trimBase.current = { ...prim }
+      setNodes(newNodes)
+      setRefImg(null); setRefData(null); setLut(null)   // AI mode — no reference
+      setGrade({
+        temp:prim.temp, tint:prim.tint, con:prim.con, gamma:prim.gamma, sat:prim.sat, lift:prim.lift,
+        halation:hal, look:'ai', lookAmount:0, matched:false,
+        desc:String(j.desc||j.name||'AI Look'), toneDesc:String(j.name||'AI Look'),
+      })
+      if (j.name) setLutName(String(j.name).replace(/\s+/g,'_').slice(0,24))
+      toast('✦ AI Look: ' + (j.name||promptText))
+    } catch {
+      if (!isAdmin) addCredits(aiChatCost)   // refund on failure
+      toast('Gagal generate look — coba lagi / ubah prompt', 'err')
+    }
+    setPromptLoading(false)
   }
 
   // ── HALEA Code: share look as text ─────────────────────────────────────────
@@ -743,19 +823,46 @@ ${seq(ptsB)}
             </div>
           </div>
           <div>
-            <div className="flex items-center gap-2 mb-2"><span className="text-[9px] font-black tracking-widest uppercase text-accent">① Reference Photo</span><div className="flex-1 h-px bg-b1"/></div>
-            <p className="text-[10px] text-t3 mb-2 leading-relaxed">Photo dengan look yang mau kamu tiru.</p>
-            {refImg ? (
-              <div className="relative group mb-3">
-                <img src={refImg} alt="Reference" className="w-full h-36 object-cover rounded-xl border border-b1"/>
-                <button onClick={()=>{setRefImg(null);setRefData(null);setGrade(null);setNodes([]);setAfterSrc(null);setLut(null)}}
-                  className="absolute top-2 right-2 w-6 h-6 bg-black/70 rounded-full text-white text-[10px] flex items-center justify-center opacity-0 group-hover:opacity-100 transition-opacity hover:bg-red-500">✕</button>
-              </div>
-            ) : <div className="mb-3"><DropZone label="Drop reference photo" sub="JPG · PNG · WEBP" icon="🖼" accept="image/*" onFile={handleRefPhoto}/></div>}
-            <button onClick={handleAnalyze} disabled={!refData||analyzing}
-              className={`w-full py-3 rounded-xl text-xs font-black uppercase tracking-widest transition-all flex items-center justify-center gap-2 ${!refData?'bg-s3 text-t3 cursor-not-allowed':analyzing?'bg-a4/50 text-white':'bg-a4 text-black hover:bg-purple-300 shadow-lg shadow-a4/20'}`}>
-              {analyzing?<><span className="w-3.5 h-3.5 border-2 border-current/30 border-t-current rounded-full animate-spin"/>Analyzing...</>:'✦ Match Colors'}
-            </button>
+            <div className="flex items-center gap-2 mb-2"><span className="text-[9px] font-black tracking-widest uppercase text-accent">① Tentukan Look</span><div className="flex-1 h-px bg-b1"/></div>
+            {/* mode toggle: reference photo vs AI prompt */}
+            <div className="grid grid-cols-2 gap-1 bg-s3 border border-b1 rounded-lg p-1 mb-2.5">
+              {([['ref','🖼 Foto'],['prompt','✨ Prompt AI']] as const).map(([md,lbl])=>(
+                <button key={md} onClick={()=>setAiMode(md)}
+                  className={`py-1.5 rounded-md text-[10px] font-bold transition-colors ${aiMode===md?'bg-a4 text-black':'text-t2 hover:text-txt'}`}>{lbl}</button>
+              ))}
+            </div>
+            {aiMode==='ref' ? (
+              <>
+                <p className="text-[10px] text-t3 mb-2 leading-relaxed">Photo dengan look yang mau kamu tiru.</p>
+                {refImg ? (
+                  <div className="relative group mb-3">
+                    <img src={refImg} alt="Reference" className="w-full h-36 object-cover rounded-xl border border-b1"/>
+                    <button onClick={()=>{setRefImg(null);setRefData(null);setGrade(null);setNodes([]);setAfterSrc(null);setLut(null)}}
+                      className="absolute top-2 right-2 w-6 h-6 bg-black/70 rounded-full text-white text-[10px] flex items-center justify-center opacity-0 group-hover:opacity-100 transition-opacity hover:bg-red-500">✕</button>
+                  </div>
+                ) : <div className="mb-3"><DropZone label="Drop reference photo" sub="JPG · PNG · WEBP" icon="🖼" accept="image/*" onFile={handleRefPhoto}/></div>}
+                <button onClick={handleAnalyze} disabled={!refData||analyzing}
+                  className={`w-full py-3 rounded-xl text-xs font-black uppercase tracking-widest transition-all flex items-center justify-center gap-2 ${!refData?'bg-s3 text-t3 cursor-not-allowed':analyzing?'bg-a4/50 text-white':'bg-a4 text-black hover:bg-purple-300 shadow-lg shadow-a4/20'}`}>
+                  {analyzing?<><span className="w-3.5 h-3.5 border-2 border-current/30 border-t-current rounded-full animate-spin"/>Analyzing...</>:'✦ Match Colors'}
+                </button>
+              </>
+            ) : (
+              <>
+                <p className="text-[10px] text-t3 mb-2 leading-relaxed">Deskripsikan look-nya. Cth: &ldquo;kayak film Godfather&rdquo;, &ldquo;teal orange blockbuster&rdquo;, &ldquo;vintage 90an hangat&rdquo;.</p>
+                <textarea value={promptText} onChange={e=>setPromptText(e.target.value)} rows={2}
+                  placeholder="Bikin footage ini look-nya seperti..."
+                  className="w-full bg-s2 border border-b1 text-txt px-3 py-2 rounded-lg text-[11px] outline-none focus:border-a4 transition-colors resize-none mb-2 placeholder:text-t3"/>
+                <div className="flex flex-wrap gap-1 mb-2.5">
+                  {['Godfather','Teal & Orange','Vintage 90an','Moody Noir'].map(s=>(
+                    <button key={s} onClick={()=>setPromptText(s)} className="text-[9px] px-2 py-1 rounded-full bg-s3 border border-b1 text-t3 hover:border-a4/40 hover:text-a4 transition-colors">{s}</button>
+                  ))}
+                </div>
+                <button onClick={generateFromPrompt} disabled={promptLoading||!promptText.trim()}
+                  className={`w-full py-3 rounded-xl text-xs font-black uppercase tracking-widest transition-all flex items-center justify-center gap-2 ${!promptText.trim()?'bg-s3 text-t3 cursor-not-allowed':promptLoading?'bg-a4/50 text-white':'bg-a4 text-black hover:bg-purple-300 shadow-lg shadow-a4/20'}`}>
+                  {promptLoading?<><span className="w-3.5 h-3.5 border-2 border-current/30 border-t-current rounded-full animate-spin"/>Generating...</>:<>✨ Generate Look{!isAdmin&&<span className="text-[8px] bg-black/15 px-1.5 py-0.5 rounded-full normal-case tracking-normal">{aiChatCost} kredit</span>}</>}
+                </button>
+              </>
+            )}
           </div>
           {grade&&(
             <div className="bg-s3 border border-b2 rounded-xl overflow-hidden">
@@ -1046,41 +1153,68 @@ ${seq(ptsB)}
               <p className="text-[9px] text-t3 mt-2">Dapat kode dari creator? Paste → look langsung ke-load</p>
             </div>
 
-            {/* Reference photo card */}
+            {/* Reference / AI prompt card */}
             <div className="bg-s2 border border-b1 rounded-2xl overflow-hidden shadow-lg">
               <div className="px-4 py-3.5 border-b border-b1 flex items-center gap-3">
-                <span className={`w-7 h-7 rounded-full flex items-center justify-center text-[11px] font-black flex-shrink-0 ${refData?'bg-ok text-white':'bg-accent/20 text-accent'}`}>{refData?'✓':'1'}</span>
+                <span className={`w-7 h-7 rounded-full flex items-center justify-center text-[11px] font-black flex-shrink-0 ${(refData||nodes.length)?'bg-ok text-white':'bg-accent/20 text-accent'}`}>{(refData||nodes.length)?'✓':'1'}</span>
                 <div className="flex-1 min-w-0">
-                  <p className="text-xs font-bold uppercase tracking-wider">Reference Photo</p>
-                  <p className="text-[10px] text-t3 mt-0.5">Foto dengan look yang mau ditiru</p>
+                  <p className="text-xs font-bold uppercase tracking-wider">Tentukan Look</p>
+                  <p className="text-[10px] text-t3 mt-0.5">Dari foto referensi atau prompt AI</p>
                 </div>
-                {refData&&<span className="text-[9px] text-ok font-bold flex-shrink-0">Ready ✓</span>}
               </div>
               <div className="p-4">
-                {refImg ? (
-                  <div className="relative">
-                    <img src={refImg} alt="Reference" className="w-full h-48 object-cover rounded-xl border border-b1"/>
-                    <button onClick={()=>{setRefImg(null);setRefData(null);setGrade(null);setNodes([]);setAfterSrc(null);setLut(null)}}
-                      className="absolute top-2.5 right-2.5 w-9 h-9 bg-black/70 rounded-full text-white flex items-center justify-center text-sm hover:bg-red-500 transition-colors">✕</button>
-                  </div>
+                <div className="grid grid-cols-2 gap-1 bg-s3 border border-b1 rounded-lg p-1 mb-3">
+                  {([['ref','🖼 Foto'],['prompt','✨ Prompt AI']] as const).map(([md,lbl])=>(
+                    <button key={md} onClick={()=>setAiMode(md)}
+                      className={`py-2 rounded-md text-[11px] font-bold transition-colors ${aiMode===md?'bg-a4 text-black':'text-t2'}`}>{lbl}</button>
+                  ))}
+                </div>
+                {aiMode==='ref' ? (
+                  refImg ? (
+                    <div className="relative">
+                      <img src={refImg} alt="Reference" className="w-full h-48 object-cover rounded-xl border border-b1"/>
+                      <button onClick={()=>{setRefImg(null);setRefData(null);setGrade(null);setNodes([]);setAfterSrc(null);setLut(null)}}
+                        className="absolute top-2.5 right-2.5 w-9 h-9 bg-black/70 rounded-full text-white flex items-center justify-center text-sm hover:bg-red-500 transition-colors">✕</button>
+                    </div>
+                  ) : (
+                    <label className="flex flex-col items-center gap-3 py-8 px-4 border-2 border-dashed border-b2 rounded-xl cursor-pointer active:scale-[0.98] transition-transform">
+                      <input type="file" accept="image/*" className="sr-only" onChange={e=>{const f=e.target.files?.[0];if(f)handleRefPhoto(f)}}/>
+                      <span className="text-4xl opacity-30">🖼</span>
+                      <div className="text-center"><p className="text-sm font-bold">Tap untuk upload</p><p className="text-[10px] text-t3 mt-1">JPG · PNG · WEBP</p></div>
+                    </label>
+                  )
                 ) : (
-                  <label className="flex flex-col items-center gap-3 py-8 px-4 border-2 border-dashed border-b2 rounded-xl cursor-pointer active:scale-[0.98] transition-transform">
-                    <input type="file" accept="image/*" className="sr-only" onChange={e=>{const f=e.target.files?.[0];if(f)handleRefPhoto(f)}}/>
-                    <span className="text-4xl opacity-30">🖼</span>
-                    <div className="text-center"><p className="text-sm font-bold">Tap untuk upload</p><p className="text-[10px] text-t3 mt-1">JPG · PNG · WEBP</p></div>
-                  </label>
+                  <>
+                    <textarea value={promptText} onChange={e=>setPromptText(e.target.value)} rows={2}
+                      placeholder="Bikin footage ini look-nya seperti film Godfather..."
+                      className="w-full bg-s3 border border-b2 text-txt px-3 py-2.5 rounded-xl text-sm outline-none focus:border-a4 transition-colors resize-none placeholder:text-t3"/>
+                    <div className="flex flex-wrap gap-1.5 mt-2">
+                      {['Godfather','Teal & Orange','Vintage 90an','Moody Noir'].map(s=>(
+                        <button key={s} onClick={()=>setPromptText(s)} className="text-[10px] px-2.5 py-1 rounded-full bg-s3 border border-b1 text-t3 active:border-a4/40">{s}</button>
+                      ))}
+                    </div>
+                  </>
                 )}
               </div>
             </div>
 
-            {/* Match Colors */}
-            <button onClick={handleAnalyze} disabled={!refData||analyzing}
-              className={`w-full py-4 rounded-2xl text-sm font-black uppercase tracking-widest transition-all active:scale-[0.97] flex items-center justify-center gap-2.5 ${
-                !refData?'bg-s3 border border-b1 text-t3 cursor-not-allowed':
-                analyzing?'bg-a4/40 text-black/60 border border-a4/20':
-                'bg-a4 text-black shadow-2xl shadow-a4/30'}`}>
-              {analyzing?<><span className="w-5 h-5 border-[3px] border-black/20 border-t-black rounded-full animate-spin"/>Analyzing...</>:'✦ Match Colors'}
-            </button>
+            {/* Action — Match Colors or Generate Look */}
+            {aiMode==='ref' ? (
+              <button onClick={handleAnalyze} disabled={!refData||analyzing}
+                className={`w-full py-4 rounded-2xl text-sm font-black uppercase tracking-widest transition-all active:scale-[0.97] flex items-center justify-center gap-2.5 ${
+                  !refData?'bg-s3 border border-b1 text-t3 cursor-not-allowed':
+                  analyzing?'bg-a4/40 text-black/60 border border-a4/20':
+                  'bg-a4 text-black shadow-2xl shadow-a4/30'}`}>
+                {analyzing?<><span className="w-5 h-5 border-[3px] border-black/20 border-t-black rounded-full animate-spin"/>Analyzing...</>:'✦ Match Colors'}
+              </button>
+            ) : (
+              <button onClick={generateFromPrompt} disabled={!promptText.trim()||promptLoading}
+                className={`w-full py-4 rounded-2xl text-sm font-black uppercase tracking-widest transition-all active:scale-[0.97] flex items-center justify-center gap-2.5 ${
+                  !promptText.trim()?'bg-s3 border border-b1 text-t3 cursor-not-allowed':
+                  promptLoading?'bg-a4/40 text-black/60':'bg-a4 text-black shadow-2xl shadow-a4/30'}`}>
+                {promptLoading?<><span className="w-5 h-5 border-[3px] border-black/20 border-t-black rounded-full animate-spin"/>Generating...</>:<>✨ Generate Look{!isAdmin&&<span className="text-[10px] bg-black/15 px-2 py-0.5 rounded-full normal-case tracking-normal">{aiChatCost} kredit</span>}</>}
+              </button>
+            )}
 
             {/* Skin Guard toggle */}
             {nodes.length>0&&(
