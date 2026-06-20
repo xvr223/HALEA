@@ -10,7 +10,10 @@ export async function POST(req: NextRequest) {
   }
 
   try {
-    const { system, messages, max_tokens = 1024 } = await req.json()
+    const { system, messages, max_tokens = 1024, model, temperature = 0.7, json } = await req.json()
+    // allowlist — default chat uses fast 8B; AI Look uses the smarter 70B
+    const MODELS = ['llama-3.1-8b-instant', 'llama-3.3-70b-versatile']
+    const chosen = MODELS.includes(model) ? model : 'llama-3.1-8b-instant'
     const res = await fetch('https://api.groq.com/openai/v1/chat/completions', {
       method: 'POST',
       headers: {
@@ -18,10 +21,11 @@ export async function POST(req: NextRequest) {
         'Authorization': `Bearer ${key}`,
       },
       body: JSON.stringify({
-        model: 'llama-3.1-8b-instant',
+        model: chosen,
         messages: [{ role: 'system', content: system }, ...messages],
         max_tokens,
-        temperature: 0.7,
+        temperature,
+        ...(json ? { response_format: { type: 'json_object' } } : {}),
       }),
     })
     const data = await res.json()

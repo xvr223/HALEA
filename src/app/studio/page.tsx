@@ -11,7 +11,7 @@ import { encodeGrade, decodeGrade, copyText } from '@/lib/haleaCode'
 import { LogProfile, LOG_PROFILES, logToDisplay, convertImageData, computeAutoGain, detectLogProfile } from '@/lib/logProfiles'
 
 // ── Types ─────────────────────────────────────────────────────────────────────
-type NodeType = 'primary' | 'look' | 'halation' | 'match' | 'split'
+type NodeType = 'primary' | 'look' | 'halation' | 'match' | 'split' | 'hsl'
 interface GradeNode {
   id: string; type: NodeType; enabled: boolean
   params: Record<string, number | string>
@@ -119,7 +119,25 @@ function applyNodes(r:number,g:number,b:number,nodes:GradeNode[]):[number,number
       b=clamp(b-temp*0.15+tint*0.04+lift*(1-b)*0.8+lift*0.2)
       if(gamma){r=clamp(Math.pow(Math.max(r,0),1/(1+gamma)));g=clamp(Math.pow(Math.max(g,0),1/(1+gamma)));b=clamp(Math.pow(Math.max(b,0),1/(1+gamma)))}
       if(con){r=clamp(0.5+(r-0.5)*(1+con));g=clamp(0.5+(g-0.5)*(1+con));b=clamp(0.5+(b-0.5)*(1+con))}
+      const shoulder=p.shoulder as number
+      if(shoulder){const t=0.72,f=(v:number)=>v>t?t+(v-t)/(1+(v-t)*shoulder*5):v;r=f(r);g=f(g);b=f(b)}  // filmic highlight rolloff
       if(sat){const lm=luma(r,g,b),sf=1+sat;r=clamp(lm+(r-lm)*sf);g=clamp(lm+(g-lm)*sf);b=clamp(lm+(b-lm)*sf)}
+    }
+    if(node.type==='hsl'){
+      // per-hue surgical control (8 bands) — the "smart" depth of a real grade
+      let [h,s,l]=rgbToHsl(r,g,b)
+      if(s>0.035){
+        const deg=h*360, centers=[0,30,60,120,180,240,280,320]
+        let hSh=0,sAdj=0,lSh=0,w=1e-6
+        for(let i=0;i<8;i++){
+          let dd=Math.abs(deg-centers[i]); if(dd>180)dd=360-dd
+          const ww=Math.max(0,1-dd/55); if(ww<=0)continue
+          hSh+=(p['h'+i]as number||0)*ww; sAdj+=(p['s'+i]as number||0)*ww; lSh+=(p['l'+i]as number||0)*ww; w+=ww
+        }
+        hSh/=w; sAdj/=w; lSh/=w
+        h=((h+hSh/360)%1+1)%1; s=clamp(s*(1+sAdj)); l=clamp(l+lSh)
+        ;[r,g,b]=hslToRgb(h,s,l)
+      }
     }
     if(node.type==='look'){
       const amount=p.amount as number
@@ -413,33 +431,79 @@ export default function StudioPage() {
     if (!useCredit(aiChatCost)) { toast(`Kredit AI habis — generate butuh ${aiChatCost} kredit. Beli di Shop 🛍`, 'err'); return }
     setPromptLoading(true)
     try {
-      // footage awareness — let the AI compensate for the current footage state
-      let ctx = ''
+      // ── Footage analysis — measured stats so the AI corrects from reality ──
+      let ctx = 'Tidak ada footage still (buat look umum).'
       if (footImg) {
-        const d = footImg.data; let sr=0,sg=0,sb=0,n=0
-        for (let i=0;i<d.length;i+=64){ sr+=d[i];sg+=d[i+1];sb+=d[i+2];n++ }
-        const ar=sr/n, ag=sg/n, ab=sb/n, br=(ar+ag+ab)/3/255
-        const warm = ar>ab+8?'cenderung warm':ab>ar+8?'cenderung cool':'netral'
-        ctx = ` Kondisi footage: brightness ${(br).toFixed(2)} (0=gelap,1=terang), white balance ${warm}. Sesuaikan koreksi agar look benar.`
+        const d = footImg.data; let sr=0,sg=0,sb=0,n=0,sl=0,sl2=0,sat=0
+        for (let i=0;i<d.length;i+=32){
+          const r=d[i],g=d[i+1],b=d[i+2]; sr+=r;sg+=g;sb+=b
+          const mx=Math.max(r,g,b),mn=Math.min(r,g,b),lm=(0.2126*r+0.7152*g+0.0722*b)/255
+          sl+=lm; sl2+=lm*lm; sat+=mx>0?(mx-mn)/mx:0; n++
+        }
+        const ar=sr/n,ag=sg/n,ab=sb/n, br=sl/n, sd=Math.sqrt(Math.max(0,sl2/n-br*br)), sa=sat/n
+        const wb = ar>ab+10?'WARM (kuning/oranye)':ab>ar+10?'COOL (kebiruan)':'netral'
+        const gt = ag>(ar+ab)/2+8?'ada tinge hijau':ag<(ar+ab)/2-8?'ada tinge magenta':'tint netral'
+        ctx = `Footage saat ini: brightness ${br.toFixed(2)} (${br<0.32?'gelap/underexposed':br>0.6?'terang':'mid'}), kontras ${sd.toFixed(2)} (${sd<0.16?'flat/datar':sd>0.26?'kontras tinggi':'normal'}), white balance ${wb}, ${gt}, saturasi ${sa.toFixed(2)} (${sa<0.18?'pucat':sa>0.4?'jenuh':'normal'}). PENTING: koreksi dari titik ini menuju look target. Mis. footage cool & flat → tambah warmth & contrast untuk look warm.`
       }
-      const system = `Kamu colorist film profesional. User minta look sinematik untuk footage mereka. Balas HANYA JSON valid (tanpa teks/penjelasan lain), skema persis:
-{"name":"string singkat","temp":0,"tint":0,"exposure":0,"contrast":0,"saturation":0,"lift":0,"shadowHue":0,"shadowSat":0,"highlightHue":0,"highlightSat":0,"halation":0,"desc":"string singkat"}
-Rentang: temp -0.3..0.3 (+=warm), tint -0.2..0.2 (+=magenta), exposure -0.2..0.2, contrast -0.3..0.3, saturation -0.4..0.3, lift 0..0.12 (angkat hitam/faded), shadowHue & highlightHue 0-360, shadowSat & highlightSat 0..0.4, halation 0..0.3 (glow film).
-Acuan hue: 30-40=amber, 45-55=emas, 195-210=teal, 220-240=biru, 110-130=hijau, 15-25=oranye.
-Contoh look: Godfather=warm amber, saturasi rendah, blacks lifted, highlight emas, contrast lembut. Teal & Orange blockbuster=shadow teal(200) highlight oranye(30) contrast tinggi. The Matrix=hijau(120) di semua. Moody noir=cool, contrast tinggi, desaturated.${ctx}`
-      const res = await fetch('/api/chat', { method:'POST', headers:{'Content-Type':'application/json'}, body: JSON.stringify({ system, messages:[{role:'user',content:promptText}], max_tokens:400 }) })
+
+      const system = `Kamu adalah Senior Colorist Hollywood + DIT. Tugas: terjemahkan permintaan look user jadi RESEP GRADING numerik yang PRESISI & detail untuk engine HALEA. Pikirkan seperti colorist sungguhan: white balance dulu, lalu kontras/tone, lalu split-tone shadow/highlight, lalu sentuhan per-warna (HSL), lalu film texture.
+
+Balas HANYA JSON valid (tanpa markdown/penjelasan). Skema:
+{
+ "name":"nama look singkat",
+ "primary":{"temp":0,"tint":0,"exposure":0,"contrast":0,"saturation":0,"lift":0,"shoulder":0},
+ "split":{"shadowHue":0,"shadowSat":0,"highlightHue":0,"highlightSat":0,"balance":0},
+ "hsl":[{"color":"green","hueShift":0,"sat":0,"lum":0}],
+ "halation":0,
+ "desc":"deskripsi look 1 kalimat"
+}
+
+RENTANG (hormati ketat):
+- temp -0.3..0.3 (+warm/−cool), tint -0.2..0.2 (+magenta/−hijau)
+- exposure -0.2..0.2, contrast -0.3..0.3, saturation -0.45..0.3
+- lift 0..0.14 (angkat hitam = faded/film matte), shoulder 0..0.8 (rolloff highlight lembut khas film)
+- split shadowHue/highlightHue 0-360 derajat, shadowSat/highlightSat 0..0.35, balance -0.3..0.3 (geser pivot shadow/highlight)
+- hsl: array 0-5 item; color = red|orange|yellow|green|aqua|blue|purple|magenta; hueShift -40..40 deg, sat -0.8..0.6, lum -0.25..0.25
+- halation 0..0.3 (glow merah di highlight, film analog)
+
+PANDUAN HUE: amber 35, emas 50, oranye-kulit 25, teal 190, cyan 180, biru 225, hijau 120, hijau-lime 90, ungu 280, magenta 320.
+PRINSIP: lindungi skin tone (jangan geser oranye/merah ekstrem). Look kuat = kombinasi banyak parameter halus, BUKAN satu slider digeber. Selalu isi split-tone untuk look sinematik.
+
+CONTOH (pelajari pola, jangan copy mentah):
+The Godfather → {"name":"Godfather","primary":{"temp":0.16,"tint":0.02,"exposure":-0.04,"contrast":0.06,"saturation":-0.22,"lift":0.05,"shoulder":0.45},"split":{"shadowHue":35,"shadowSat":0.16,"highlightHue":48,"highlightSat":0.14,"balance":0.1},"hsl":[{"color":"yellow","sat":-0.2},{"color":"blue","sat":-0.4,"lum":-0.1}],"halation":0.08,"desc":"Amber hangat, hitam terangkat, highlight emas, saturasi rendah, kontras lembut"}
+Blade Runner 2049 → {"name":"BR2049","primary":{"temp":0.05,"tint":-0.02,"exposure":-0.03,"contrast":0.14,"saturation":-0.05,"lift":0.03,"shoulder":0.2},"split":{"shadowHue":205,"shadowSat":0.2,"highlightHue":30,"highlightSat":0.22,"balance":0},"hsl":[{"color":"orange","sat":0.15},{"color":"blue","hueShift":-8,"sat":0.1}],"halation":0.15,"desc":"Teal-oranye pekat, kontras tinggi, glow"}
+The Matrix → {"name":"Matrix","primary":{"temp":-0.02,"tint":-0.06,"exposure":-0.02,"contrast":0.12,"saturation":-0.1,"lift":0.02,"shoulder":0.1},"split":{"shadowHue":120,"shadowSat":0.22,"highlightHue":110,"highlightSat":0.18,"balance":0},"hsl":[{"color":"green","sat":0.2},{"color":"yellow","hueShift":15}],"halation":0.05,"desc":"Cast hijau digital di seluruh frame"}
+
+${ctx}`
+
+      const res = await fetch('/api/chat', { method:'POST', headers:{'Content-Type':'application/json'},
+        body: JSON.stringify({ system, messages:[{role:'user',content:promptText}], model:'llama-3.3-70b-versatile', temperature:0.35, max_tokens:700, json:true }) })
       const data = await res.json()
       if (data.error) throw new Error(data.error)
       const txt = data.choices?.[0]?.message?.content || ''
-      const m = txt.match(/\{[\s\S]*\}/)
-      if (!m) throw new Error('parse')
-      const j = JSON.parse(m[0])
+      const mm = txt.match(/\{[\s\S]*\}/)
+      if (!mm) throw new Error('parse')
+      const j = JSON.parse(mm[0])
       const num = (v:unknown,lo:number,hi:number,d=0)=>{ const x=typeof v==='number'?v:parseFloat(String(v)); return isNaN(x)?d:Math.max(lo,Math.min(hi,x)) }
-      const prim = { lift:num(j.lift,0,0.12), gamma:num(j.exposure,-0.2,0.2), temp:num(j.temp,-0.3,0.3), tint:num(j.tint,-0.2,0.2), con:num(j.contrast,-0.3,0.3), sat:num(j.saturation,-0.4,0.3) }
+      const P = j.primary||{}, S = j.split||{}
+      const prim = { lift:num(P.lift,0,0.14), gamma:num(P.exposure,-0.2,0.2), temp:num(P.temp,-0.3,0.3), tint:num(P.tint,-0.2,0.2), con:num(P.contrast,-0.3,0.3), sat:num(P.saturation,-0.45,0.3), shoulder:num(P.shoulder,0,0.8) }
       const hal = num(j.halation,0,0.3)
+
+      // map HSL targeted tweaks → 8-band params (red,orange,yellow,green,aqua,blue,purple,magenta)
+      const BAND:Record<string,number>={red:0,orange:1,yellow:2,green:3,aqua:4,cyan:4,teal:4,blue:5,purple:6,violet:6,magenta:7,pink:7}
+      const hslP:Record<string,number>={}
+      let hslActive=false
+      if (Array.isArray(j.hsl)) for (const a of j.hsl as Array<Record<string,unknown>>){
+        const bi=BAND[String(a.color||'').toLowerCase()]; if(bi===undefined)continue
+        hslP['h'+bi]=num(a.hueShift,-40,40); hslP['s'+bi]=num(a.sat,-0.8,0.6); hslP['l'+bi]=num(a.lum,-0.25,0.25)
+        if(hslP['h'+bi]||hslP['s'+bi]||hslP['l'+bi])hslActive=true
+      }
+
+      const shSat=num(S.shadowSat,0,0.35), hiSat=num(S.highlightSat,0,0.35)
       const newNodes:GradeNode[] = [
         { id:mkId(), type:'primary', enabled:true, params:{...prim} },
-        { id:mkId(), type:'split',   enabled:true, params:{ shHue:num(j.shadowHue,0,360,30), shSat:num(j.shadowSat,0,0.4), hiHue:num(j.highlightHue,0,360,45), hiSat:num(j.highlightSat,0,0.4), balance:0 } },
+        { id:mkId(), type:'hsl',     enabled:hslActive, params:hslP },
+        { id:mkId(), type:'split',   enabled:shSat>0.01||hiSat>0.01, params:{ shHue:num(S.shadowHue,0,360,30), shSat, hiHue:num(S.highlightHue,0,360,45), hiSat, balance:num(S.balance,-0.3,0.3) } },
         { id:mkId(), type:'halation',enabled:hal>0.04, params:{ threshold:0.65, intensity:hal } },
       ]
       trimBase.current = { ...prim }
@@ -848,12 +912,12 @@ ${seq(ptsB)}
               </>
             ) : (
               <>
-                <p className="text-[10px] text-t3 mb-2 leading-relaxed">Deskripsikan look-nya. Cth: &ldquo;kayak film Godfather&rdquo;, &ldquo;teal orange blockbuster&rdquo;, &ldquo;vintage 90an hangat&rdquo;.</p>
+                <p className="text-[10px] text-t3 mb-2 leading-relaxed">Deskripsikan look apa pun — AI colorist nerjemahin jadi grade berlapis (tone, split-tone, per-warna) {footImg&&<span className="text-a4">& baca footage kamu dulu</span>}.</p>
                 <textarea value={promptText} onChange={e=>setPromptText(e.target.value)} rows={2}
-                  placeholder="Bikin footage ini look-nya seperti..."
+                  placeholder="cth: kayak film Godfather · sunset Bali hangat · cyberpunk neon · Wes Anderson pastel..."
                   className="w-full bg-s2 border border-b1 text-txt px-3 py-2 rounded-lg text-[11px] outline-none focus:border-a4 transition-colors resize-none mb-2 placeholder:text-t3"/>
                 <div className="flex flex-wrap gap-1 mb-2.5">
-                  {['Godfather','Teal & Orange','Vintage 90an','Moody Noir'].map(s=>(
+                  {['Godfather','Blade Runner 2049','Wes Anderson','Teal & Orange','Vintage 90an','Moody Noir','Kodak Portra','Senja Bali'].map(s=>(
                     <button key={s} onClick={()=>setPromptText(s)} className="text-[9px] px-2 py-1 rounded-full bg-s3 border border-b1 text-t3 hover:border-a4/40 hover:text-a4 transition-colors">{s}</button>
                   ))}
                 </div>
@@ -1186,10 +1250,11 @@ ${seq(ptsB)}
                 ) : (
                   <>
                     <textarea value={promptText} onChange={e=>setPromptText(e.target.value)} rows={2}
-                      placeholder="Bikin footage ini look-nya seperti film Godfather..."
+                      placeholder="cth: kayak film Godfather · sunset Bali · cyberpunk neon..."
                       className="w-full bg-s3 border border-b2 text-txt px-3 py-2.5 rounded-xl text-sm outline-none focus:border-a4 transition-colors resize-none placeholder:text-t3"/>
+                    <p className="text-[10px] text-t3 mt-1.5">AI colorist nerjemahin jadi grade berlapis{footImg&&<span className="text-a4"> & baca footage kamu</span>}.</p>
                     <div className="flex flex-wrap gap-1.5 mt-2">
-                      {['Godfather','Teal & Orange','Vintage 90an','Moody Noir'].map(s=>(
+                      {['Godfather','Blade Runner 2049','Wes Anderson','Teal & Orange','Kodak Portra','Senja Bali'].map(s=>(
                         <button key={s} onClick={()=>setPromptText(s)} className="text-[10px] px-2.5 py-1 rounded-full bg-s3 border border-b1 text-t3 active:border-a4/40">{s}</button>
                       ))}
                     </div>

@@ -13,7 +13,7 @@
 // v1 & v2 codes (older) still decode — version byte is checked.
 
 export interface CodeNode {
-  type: 'match' | 'primary' | 'look' | 'halation' | 'split'
+  type: 'match' | 'primary' | 'look' | 'halation' | 'split' | 'hsl'
   enabled: boolean
   params: Record<string, number | string>
 }
