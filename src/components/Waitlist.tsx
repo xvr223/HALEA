@@ -1,6 +1,6 @@
 'use client'
 import { useState } from 'react'
-import { Instagram, Check } from 'lucide-react'
+import { Instagram, Check, Film, Palette, Code2 } from 'lucide-react'
 import { joinWaitlist } from '@/lib/launch'
 
 const FEATURES = [
@@ -139,6 +139,47 @@ export function Waitlist() {
             {['Dasar Warna', 'Log & Kamera', 'Teknik Grading', 'Jual Preset', '🏋️ Grading Gym', '📜 Sertifikat'].map(t => (
               <span key={t} className="text-[11px] font-bold px-3 py-1.5 rounded-full bg-s3 border border-b1 text-t2">{t}</span>
             ))}
+          </div>
+        </div>
+      </section>
+
+      {/* ── FOUNDER ── */}
+      <section className="border-t border-b1">
+        <div className="max-w-3xl mx-auto px-6 py-16 md:py-20">
+          <p className="text-[9px] font-black tracking-[0.3em] uppercase text-accent mb-8 text-center">Di balik HALEA</p>
+          <div className="flex flex-col md:flex-row items-center gap-8 md:gap-12">
+            {/* photo */}
+            <div className="flex-shrink-0 relative">
+              <div className="absolute inset-0 rounded-3xl bg-gradient-to-br from-accent/30 via-accent/10 to-transparent blur-2xl scale-110 opacity-70" />
+              <div className="relative w-40 h-48 md:w-48 md:h-60 rounded-3xl overflow-hidden border border-accent/20 shadow-2xl shadow-black/60">
+                {/* eslint-disable-next-line @next/next/no-img-element */}
+                <img src="/robbie.jpg" alt="Robbie Satria" className="w-full h-full object-cover object-top"
+                  onError={(e) => { e.currentTarget.src = 'https://unavatar.io/instagram/haleastudio' }} />
+                <div className="absolute inset-0 bg-gradient-to-t from-black/40 via-transparent to-transparent pointer-events-none" />
+              </div>
+            </div>
+            {/* identity + story */}
+            <div className="text-center md:text-left">
+              <p className="text-[9px] font-black tracking-[0.3em] uppercase text-accent mb-2">Founder · HALEA</p>
+              <h2 className="font-fraunces text-3xl md:text-4xl font-semibold mb-3">Robbie <span className="italic text-accent">Satria</span></h2>
+              <div className="flex flex-wrap gap-2 justify-center md:justify-start mb-4">
+                {[[<Film key="f" size={11} />, 'Content Creator'], [<Palette key="p" size={11} />, 'Video Editor'], [<Code2 key="c" size={11} />, 'Web Developer']].map(([ic, lb]) => (
+                  <span key={String(lb)} className="flex items-center gap-1.5 px-3 py-1.5 rounded-full bg-s3 border border-b2 text-[10px] font-bold text-t2 uppercase tracking-wider">{ic}{lb}</span>
+                ))}
+              </div>
+              <p className="text-t2 text-[15px] leading-relaxed mb-3">
+                &ldquo;Sejak 2017 aku habiskan ribuan jam di depan timeline — belajar color grading, nyobain ratusan LUT,
+                ngejar look film yang aku suka. Tapi mendapatkan warna yang pas selalu makan waktu jauh lebih lama dari seharusnya.&rdquo;
+              </p>
+              <p className="text-t2 text-[15px] leading-relaxed mb-5">
+                HALEA lahir dari frustrasi itu — dibuat oleh kreator yang ngerti langsung masalahnya, bukan perusahaan yang lihat peluang pasar.
+                <strong className="text-txt"> Tujuannya satu: bikin kamu fokus berkarya, bukan ngutak-atik warna.</strong>
+              </p>
+              <a href="https://instagram.com/haleastudio" target="_blank" rel="noopener noreferrer"
+                className="inline-flex items-center gap-2 px-5 py-2.5 rounded-full bg-accent text-white text-xs font-bold hover:bg-orange-400 transition-all shadow-lg shadow-accent/25">
+                <Instagram size={13} /> @haleastudio
+              </a>
+            </div>
           </div>
         </div>
       </section>
