@@ -344,6 +344,93 @@ function castName(da: number, db: number): string {
 }
 
 // ══════════════════════════════════════════════════════════════════════════════
+// SMART TONE ENGINE (v7) — a colorist thinks in tonal LANDMARKS, not raw stats.
+// Instead of letting the distribution transfer mangle luminance, we anchor the
+// footage's black point, shadow, midtone (exposure), highlight & white point to
+// the reference's, then connect them with a FILMIC curve: a gentle toe in the
+// shadows + monotone body + a smooth shoulder that rolls highlights off instead
+// of clipping. This gives controlled blacks, matched exposure & clean highlights.
+// ══════════════════════════════════════════════════════════════════════════════
+
+interface ToneLM { bp: number; sh: number; mid: number; hi: number; wp: number }
+function toneLandmarks(hist: Float32Array): ToneLM {
+  const cdf = buildCdf(hist)
+  return {
+    bp:  invCdf(cdf, 0.004),   // black point (noise floor)
+    sh:  invCdf(cdf, 0.12),    // shadows
+    mid: invCdf(cdf, 0.5),     // midtone = exposure anchor (18% grey)
+    hi:  invCdf(cdf, 0.88),    // highlights
+    wp:  invCdf(cdf, 0.996),   // white point
+  }
+}
+
+// monotone cubic Hermite (Fritsch-Carlson) — smooth, no overshoot
+function pchip(xs: number[], ys: number[], x: number): number {
+  const n = xs.length
+  if (x <= xs[0]) return ys[0]
+  if (x >= xs[n - 1]) return ys[n - 1]
+  let i = 0; while (i < n - 2 && x > xs[i + 1]) i++
+  const h = xs[i + 1] - xs[i], t = (x - xs[i]) / h
+  const sec = (a: number, b: number) => (ys[b] - ys[a]) / (xs[b] - xs[a])
+  const delta = sec(i, i + 1)
+  let m0 = i === 0 ? delta : (sec(i - 1, i) + delta) / 2
+  let m1 = i === n - 2 ? delta : (delta + sec(i + 1, i + 2)) / 2
+  // clamp tangents to preserve monotonicity
+  if (delta === 0) { m0 = 0; m1 = 0 } else { m0 = Math.max(0, Math.min(m0, 3 * delta)); m1 = Math.max(0, Math.min(m1, 3 * delta)) }
+  const t2 = t * t, t3 = t2 * t
+  return (2 * t3 - 3 * t2 + 1) * ys[i] + (t3 - 2 * t2 + t) * h * m0 + (-2 * t3 + 3 * t2) * ys[i + 1] + (t3 - t2) * h * m1
+}
+
+// Build a 64-knot filmic tone curve mapping footage L → reference L via landmarks
+function buildSmartTone(footHist: Float32Array, refHist: Float32Array): Float32Array {
+  const F = toneLandmarks(footHist), R = toneLandmarks(refHist)
+  // contrast safety: limit how far the body slope can expand/compress vs footage
+  const fSpread = Math.max(0.04, F.wp - F.bp), rSpread = Math.max(0.04, R.wp - R.bp)
+  const ratio = clampN(rSpread / fSpread, 0.6, 1.55)   // cap contrast expansion → no harsh stretch
+  const target = (rv: number, fv: number) => {
+    const lim = R.mid + (fv - F.mid) * ratio
+    return clampN(rv * 0.7 + lim * 0.3, 0, 1)
+  }
+  const blackFloor = clampN(R.bp - 0.015, 0, 0.18)
+  const wpTop = Math.min(R.wp, 0.965)   // leave highlight headroom — never slam body to pure white
+  // monotone control points through the landmarks
+  const xs: number[] = [F.bp, F.sh, F.mid, F.hi, F.wp]
+  const ys: number[] = [
+    Math.max(blackFloor, R.bp), target(R.sh, F.sh), target(R.mid, F.mid), Math.min(target(R.hi, F.hi), wpTop - 0.01), wpTop,
+  ]
+  // enforce strictly increasing (monotone) on both axes
+  for (let i = 1; i < xs.length; i++) { if (xs[i] <= xs[i - 1]) xs[i] = xs[i - 1] + 1e-3; if (ys[i] <= ys[i - 1]) ys[i] = ys[i - 1] + 1e-3 }
+
+  const K = 64, curve = new Float32Array(K)
+  const SH = Math.tanh(1.3)
+  for (let k = 0; k < K; k++) {
+    const x = k / (K - 1)
+    let y: number
+    if (x <= F.bp) {
+      // toe — gentle smoothstep from 0→black point
+      const t = F.bp > 1e-4 ? x / F.bp : 0
+      y = blackFloor + (Math.max(blackFloor, R.bp) - blackFloor) * (t * t * (3 - 2 * t))
+    } else if (x >= F.wp) {
+      // shoulder — gentle filmic rolloff wpTop → 0.995 (keeps highlight gradient, no hard clip)
+      const t = (x - F.wp) / Math.max(1e-4, 1 - F.wp)
+      y = wpTop + (0.995 - wpTop) * (Math.tanh(t * 1.3) / SH)
+    } else {
+      y = pchip(xs, ys, x)
+    }
+    curve[k] = clamp01(y)
+  }
+  // light smooth + monotonic guard
+  for (let pass = 0; pass < 2; pass++) {
+    const sm = new Float32Array(K)
+    for (let k = 0; k < K; k++) sm[k] = curve[Math.max(0, k - 1)] * 0.25 + curve[k] * 0.5 + curve[Math.min(K - 1, k + 1)] * 0.25
+    sm[0] = curve[0]; sm[K - 1] = curve[K - 1]
+    for (let k = 0; k < K; k++) curve[k] = sm[k]
+  }
+  for (let k = 1; k < K; k++) if (curve[k] < curve[k - 1]) curve[k] = curve[k - 1]
+  return curve
+}
+
+// ══════════════════════════════════════════════════════════════════════════════
 // IDT — Iterative Distribution Transfer (Sliced-Wasserstein optimal transport).
 // MKL only matches the first two moments (mean + covariance). IDT matches the
 // ENTIRE color distribution: repeatedly project both clouds onto random 3D axes,
@@ -518,7 +605,7 @@ function oklabToSrgbGamut(L: number, a: number, b: number): [number, number, num
 // 33³ preview LUT and the 65³ Precision Grade export.
 interface SkinLayer { skinW: number; skinH: number; skinS: number; skinL: number }
 interface Affine { T: number[]; muF: number[]; muR: number[] }
-function bakeDenseFromSteps(steps: IDTStep[], sk: SkinLayer, size: number, pre?: Affine): Float32Array {
+function bakeDenseFromSteps(steps: IDTStep[], sk: SkinLayer, size: number, pre?: Affine, tone?: Float32Array): Float32Array {
   const N = size
   const lut = new Float32Array(N * N * N * 3)
   let li = 0
@@ -539,9 +626,14 @@ function bakeDenseFromSteps(steps: IDTStep[], sk: SkinLayer, size: number, pre?:
     // creating steep slopes → banding. Keeping it anchored to the linear base
     // caps that steepness while retaining most of the distribution refinement.
     const IDT_W = 1.0   // v7: full transport — no damping (v6's 0.7 made it "ga pintar")
-    let nL = pL + (nL0 - pL) * IDT_W
+    // color (a,b) from the full distribution transfer
     let nA = pA + (nA0 - pA) * IDT_W
     let nB = pB + (nB0 - pB) * IDT_W
+    // tone (L) from the Smart Tone Engine — anchored filmic curve is authoritative
+    // (controlled blacks/exposure/highlights); a small clamped IDT-L adds nuance
+    // without letting the distribution overshoot into highlight clipping
+    const idtL = Math.min(1, pL + (nL0 - pL) * IDT_W)
+    let nL = tone ? Math.min(0.996, sampleCurve(tone, oL) * 0.88 + idtL * 0.12) : idtL
     const C0 = Math.hypot(oA, oB), Cn = Math.hypot(nA, nB)
     if (C0 > 0.015 && Cn > 1e-5) {
       let h0 = Math.atan2(oB, oA); if (h0 < 0) h0 += TAU
@@ -1047,7 +1139,8 @@ export function computeSmartMatch(foot: ImageData, ref: ImageData): SmartMatchRe
     if (steps.length) {
       const N = 33                          // transport grid; Precision export upsamples to 65³
       const skin: SkinLayer = { skinW, skinH, skinS, skinL }
-      const lut = bakeDenseFromSteps(steps, skin, N, pre)
+      const tone = buildSmartTone(F.histL, R.histL)   // v7: filmic landmark tone
+      const lut = bakeDenseFromSteps(steps, skin, N, pre, tone)
       denseLut = { lut, size: N }
       lutSize = N
       lutId = registerDenseLut(lut, N)
