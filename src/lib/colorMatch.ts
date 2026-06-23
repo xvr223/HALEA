@@ -489,36 +489,38 @@ function buildClusterMap(foot: number[], ref: number[]): ClusterMap | null {
   const Fc = F.c, Rc = R.c
   const refTotal = Math.max(1, ref.length / 3)
   const ch = (c: number[]) => Math.hypot(c[1], c[2])
-  const hue = (c: number[]) => Math.atan2(c[2], c[1])
   const tgt: number[][] = []
   for (let i = 0; i < KM_K; i++) {
-    const fc = Fc[i], fch = ch(fc), fh = hue(fc)
+    const fc = Fc[i], fch = ch(fc)
     let wa = 0, wb = 0, wl = 0, wsum = 0
     for (let j = 0; j < KM_K; j++) {
       const rc = Rc[j], rch = ch(rc)
-      // match by ROLE: luminance dominant (bright→bright), chroma-presence
-      // moderate (saturated↔saturated, neutral↔neutral), hue weak — so the LOOK
-      // is free to recolor saturated regions (blue sky → teal/warm) while the
-      // neutral-retention step below keeps grey/cloud regions from being recolored
+      // match by ROLE, NOT by colour-similarity. Tonal position (luma) is primary,
+      // chroma-presence (saturated↔saturated, neutral↔neutral) is secondary.
+      // Crucially there is NO hue term: the whole point of a look transfer is to let
+      // a region ADOPT the reference hue of its tonally-corresponding region
+      // (blue sky → the teal sky that sits in the same bright/saturated slot).
+      // A hue penalty would map every colour to its nearest twin = near-identity =
+      // "look tak berubah". Neutral/cloud regions are protected separately below via
+      // the chroma-presence term + neutral-retention, NOT by hue matching.
       const lumaD = Math.abs(fc[0] - rc[0])
       const chromaD = Math.abs(fch - rch)
-      const hueW = Math.min(fch, rch) * 1.4
-      const hueD = Math.abs(angDiff(fh, hue(rc))) / Math.PI
-      const cost = lumaD * 3.4 + chromaD * 1.8 + hueD * hueW
-      // sharp (winner-take-most) assignment → identical inputs resolve to a clean
-      // self-match (identity); the RBF apply re-introduces smoothness spatially
-      const w = Math.exp(-cost / 0.07) * (R.pop[j] / refTotal + 0.02)
+      const cost = lumaD * 3.0 + chromaD * 2.4
+      const w = Math.exp(-cost / 0.085) * (R.pop[j] / refTotal + 0.02)
       wa += w * rc[1]; wb += w * rc[2]; wl += w * rc[0]; wsum += w
     }
     let ta = wa / wsum, tb = wb / wsum
     // NEUTRAL PRESERVATION — a near-neutral footage cluster (clouds, grey walls,
-    // overcast sky) keeps its OWN near-neutral identity, even if its nearest
-    // reference cluster is saturated. Stops clouds being recolored into blue sky.
-    const retain = fch >= 0.06 ? 0 : fch <= 0.02 ? 0.9 : 0.9 * (1 - (fch - 0.02) / 0.04)
+    // overcast sky) keeps its OWN near-neutral identity, even if its tonal slot in
+    // the reference is saturated. Tight threshold so ONLY genuinely grey regions
+    // (clouds, fog ~chroma<0.045) are protected — a hazy blue sky (chroma~0.05+)
+    // is still free to take on the reference's teal.
+    const retain = fch >= 0.045 ? 0 : fch <= 0.015 ? 0.92 : 0.92 * (1 - (fch - 0.015) / 0.03)
     ta = ta * (1 - retain) + fc[1] * retain
     tb = tb * (1 - retain) + fc[2] * retain
-    // hard chroma ceiling on the target too
-    const tch = Math.hypot(ta, tb), maxch = fch * 1.7 + 0.03
+    // chroma ceiling on the target — generous enough to let strong looks (vivid
+    // teal/orange) come through, but bounded so neutrals can't explode
+    const tch = Math.hypot(ta, tb), maxch = fch * 2.2 + 0.05
     if (tch > maxch && tch > 1e-5) { const s = maxch / tch; ta *= s; tb *= s }
     tgt.push([wl / wsum, ta, tb])
   }
@@ -607,13 +609,13 @@ function bakeDenseFromClusters(cmap: ClusterMap, sk: SkinLayer, size: number, to
       // saturated regions keep their punch (don't desaturate grass/sky to grey);
       // neutral pixels have tiny C0 so this is a no-op for them
       if (sw < 0.5) { const cFloor = C0 * 0.72; if (Cf < cFloor) Cf = cFloor }
-      // tighter chroma ceiling (+0.03) — near-neutral pixels stay near-neutral
-      const Cmax = C0 * 1.55 + 0.03
+      // chroma ceiling — generous enough for strong looks, bounded for neutrals
+      const Cmax = C0 * 1.85 + 0.045
       if (Cf > Cmax) Cf = Cmax + (Cf - Cmax) * 0.25
       if (Cf > 0.34) Cf = 0.34
       nA = Cf * Math.cos(hn); nB = Cf * Math.sin(hn)
     } else {
-      const Cmax = C0 * 1.55 + 0.03
+      const Cmax = C0 * 1.85 + 0.045
       if (Cn > Cmax) { const k = (Cmax + (Cn - Cmax) * 0.25) / Cn; nA *= k; nB *= k }
     }
     const [mr, mg, mb] = oklabToSrgbGamut(nL, nA, nB)
@@ -694,7 +696,9 @@ export interface MatchTransform {
   dense?: DenseLut             // v5: when present, this IS the transform
 }
 
-const HUE_CAP = 0.5236      // ±30° max hue swing per pixel (soft beyond)
+const HUE_CAP = 1.0472      // ±60° max hue swing per pixel (soft beyond) — real
+                            // looks recolor hard (blue sky → teal is ~40-60°), so
+                            // the cap only guards against absurd 180° flips
 
 // Core pipeline in Oklab space (shared by per-pixel apply & the refinement pass)
 function applyOklab(oL: number, oA: number, oB: number, m: MatchTransform): [number, number, number] {
