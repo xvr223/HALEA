@@ -162,8 +162,8 @@ export default function AboutPage() {
               Sepowerful apa <span className="italic text-accent">engine-nya?</span>
             </h2>
             <p className="text-t2 text-sm max-w-xl mx-auto leading-relaxed">
-              Smart Match Engine v7 dibangun di atas riset color science yang dipakai
-              industri film (Reinhard 2001, Pitié-Kokaram 2007) — lalu dikembangkan jauh melampauinya.
+              Smart Match Engine v8 dibangun di atas riset color science yang dipakai
+              industri film (Reinhard 2001, Pitié-Kokaram 2007, Chang et al. 2015) — lalu dikembangkan jauh melampauinya.
               Semua berjalan di perangkatmu, dalam hitungan detik.
             </p>
           </div>
@@ -171,8 +171,8 @@ export default function AboutPage() {
           <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
             {[
               {
-                icon: <Cpu size={16}/>, title: 'Full-Distribution Transport (IDT)',
-                desc: 'Bukan cuma menyamakan rata-rata warna — engine mencocokkan SELURUH distribusi warna lewat Iterative Distribution Transfer (Sliced-Wasserstein optimal transport), lalu di-bake jadi 3D LUT presisi tinggi. Metode riset film, di browser-mu.',
+                icon: <Cpu size={16}/>, title: 'Content-Aware Cluster Correspondence',
+                desc: 'Engine memecah footage & referensi jadi cluster warna (k-means), mencocokkan "langit ke langit, awan ke awan" lewat luma + chroma + hue, lalu di-bake jadi 3D LUT presisi tinggi. Region netral tetap netral, kulit terjaga — bukan transport global yang merusak konten.',
               },
               {
                 icon: <Sparkles size={16}/>, title: 'Zone Matrix 24 Sel',
@@ -283,10 +283,22 @@ export default function AboutPage() {
                   flaw: '77% lebih dekat ke distribusi referensi (vs 53% di V4) — tapi distribusi yang ekstrem bisa bikin transport "tajam" → warna pecah/banding di gradien halus (langit, kulit).',
                 },
                 {
-                  v: 'V6', tag: 'Hybrid Transport — Smooth & Skin-Safe', cur: true,
+                  v: 'V6', tag: 'Hybrid Transport — Smooth & Skin-Safe', cur: false,
                   problem: 'Transport distribusi penuh kadang terlalu tajam → banding di langit & kulit, dan kulit bisa keabuan/kehijauan kalau referensi punya warna dominan lain.',
                   fix: 'Arsitektur hybrid: transport linear MKL yang mulus mengerjakan bulk-nya dulu, IDT cuma me-refine sisa distribusi (di-damp). Plus gamut compression (turunkan chroma, bukan clip per-channel → hue tidak pecah) + skin guard baru yang lebih lebar & menjaga kulit tidak pernah jadi abu.',
-                  flaw: 'Hasil: transport 26% lebih mulus, kulit terjaga warnanya, nol warna out-of-gamut. Inilah engine yang dipakai HALEA sekarang.',
+                  flaw: 'Transport warnanya mulus & skin-safe — tapi pemetaan terang-gelapnya masih CDF global: blacks bisa "mengambang", highlight bisa clip keras, dan exposure tidak menyesuaikan landmark tonal referensi.',
+                },
+                {
+                  v: 'V7', tag: 'Smart Tone Engine — Filmic Tonal Landmarks', cur: false,
+                  problem: 'Look sinematik separuhnya soal tonal: di mana black-point jatuh, seberapa lembut roll-off highlight, seberapa dalam kontras mid. CDF global meratakan semua itu dan menghilangkan karakternya.',
+                  fix: 'Smart Tone Engine: deteksi landmark tonal referensi (black / shadow / mid / highlight / white percentile), lalu bangun kurva monotonic cubic (PCHIP) dengan filmic toe & shoulder (tanh roll-off) — blacks duduk pas, highlight tidak pernah clip kasar, kontras mid mengikuti referensi.',
+                  flaw: 'Tone & warna sudah presisi — tapi transport warnanya masih "global": region netral (awan, kabut) bisa ketarik warna dominan referensi → awan putih bisa berubah kebiruan.',
+                },
+                {
+                  v: 'V8', tag: 'Content-Aware — Cluster Correspondence', cur: true,
+                  problem: 'Transport global tidak sadar KONTEN. Kalau referensi langitnya biru, awan putih di footage ikut ketarik jadi biru — padahal awan harusnya tetap netral. Engine perlu mencocokkan "langit ke langit, awan ke awan".',
+                  fix: 'k-means memecah footage & referensi jadi cluster warna, lalu mencocokkan cluster lewat biaya luma + chroma + hue (Chang et al. 2015, palette-based recoloring). Region netral dikunci tetap netral, region jenuh dijaga punch-nya, lalu di-warp mulus pakai RBF — look nempel TANPA merusak konten.',
+                  flaw: 'Hasil: awan tetap awan, langit dapat warna referensi, kulit terjaga — content-aware sejati. Inilah engine yang dipakai HALEA sekarang.',
                 },
               ].map((e) => (
                 <div key={e.v} className="relative sm:pl-14">
@@ -352,7 +364,7 @@ export default function AboutPage() {
       <section className="border-t border-b border-b1 bg-s2">
         <div className="max-w-5xl mx-auto px-6 py-14 grid grid-cols-2 md:grid-cols-4 gap-8 text-center">
           {[
-            { n: 'V7',     label: 'Generasi engine sekarang' },
+            { n: 'V8',     label: 'Generasi engine sekarang' },
             { n: '0',      label: 'Foto di-upload ke server' },
             { n: '8',      label: 'Format log — rumus exact' },
             { n: '24',     label: 'Sel koreksi per match' },

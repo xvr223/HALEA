@@ -391,8 +391,8 @@ function buildSmartTone(footHist: Float32Array, refHist: Float32Array): Float32A
     const lim = R.mid + (fv - F.mid) * ratio
     return clampN(rv * 0.7 + lim * 0.3, 0, 1)
   }
-  const blackFloor = clampN(R.bp - 0.015, 0, 0.18)
-  const wpTop = Math.min(R.wp, 0.965)   // leave highlight headroom — never slam body to pure white
+  const blackFloor = clampN(R.bp, 0, 0.18)        // anchor to ref black (no forced lift → identity-safe)
+  const wpTop = Math.min(R.wp, 0.98)              // small highlight headroom
   // monotone control points through the landmarks
   const xs: number[] = [F.bp, F.sh, F.mid, F.hi, F.wp]
   const ys: number[] = [
@@ -431,149 +431,118 @@ function buildSmartTone(footHist: Float32Array, refHist: Float32Array): Float32A
 }
 
 // ══════════════════════════════════════════════════════════════════════════════
-// IDT — Iterative Distribution Transfer (Sliced-Wasserstein optimal transport).
-// MKL only matches the first two moments (mean + covariance). IDT matches the
-// ENTIRE color distribution: repeatedly project both clouds onto random 3D axes,
-// solve the exact 1D optimal transport per axis (quantile remap), and move the
-// footage cloud. Converges to the true N-D transport map (Pitié-Kokaram-Dahyot
-// 2007). The whole iteration sequence is a deterministic, replayable function —
-// so we replay it over an RGB lattice to bake a dense 3D LUT.
+// CONTENT-AWARE COLOR TRANSPORT (v8) — palette / cluster correspondence.
+// Plain distribution transfer is content-BLIND: it sends "bright pixels" to
+// "bright reference pixels" no matter WHAT they are — so overcast clouds get
+// dragged toward blue sky. A colorist instead matches LIKE regions: clouds→
+// clouds, sky→sky, foliage→foliage. We approximate that: cluster each image's
+// colors (k-means in Oklab ≈ a semantic palette), match each footage cluster to
+// the most-similar reference cluster (cost = luma + chroma + hue, so a NEUTRAL
+// cluster can't be pulled onto a SATURATED one), then warp color space with a
+// smooth RBF blend of the per-cluster corrections. Refs: Chang et al.
+// "Palette-based Photo Recoloring" 2015; cluster color transfer literature.
 // ══════════════════════════════════════════════════════════════════════════════
 
-const IDT_ITERS = 22            // v7: full smart transport (v6's 16 was too weak)
-const IDT_KNOTS = 28
-const IDT_MAXN  = 7000          // subsample cap per cloud
-const IDT_SEED  = 0x9e3779b1    // fixed → deterministic results
+const KM_K    = 10       // palette size (clusters per image)
+const KM_MAXN = 6000     // sample cap
 
-interface IDT1DMap { dom: Float32Array; out: Float32Array }       // foot-quantile → ref-quantile knots
-interface IDTStep  { rot: number[]; maps: IDT1DMap[] }            // rot = 3 rows (axes), 3 maps
-
-// seeded gaussian via Box-Muller on mulberry32
-function makeRng(seed: number) {
-  let s = seed >>> 0
-  return () => {
-    s += 0x6D2B79F5
-    let t = Math.imul(s ^ (s >>> 15), s | 1)
-    t ^= t + Math.imul(t ^ (t >>> 7), t | 61)
-    return ((t ^ (t >>> 14)) >>> 0) / 4294967296
-  }
-}
-function randomRotation(rng: () => number): number[] {
-  // 3 gaussian columns → Gram-Schmidt → orthonormal basis (uniform on SO(3))
-  const g = () => { const u = Math.max(1e-9, rng()), v = rng(); return Math.sqrt(-2 * Math.log(u)) * Math.cos(TAU * v) }
-  const col = [[g(), g(), g()], [g(), g(), g()], [g(), g(), g()]]
-  const dot = (a: number[], b: number[]) => a[0]*b[0]+a[1]*b[1]+a[2]*b[2]
-  const norm = (a: number[]) => { const n = Math.hypot(a[0],a[1],a[2]) || 1; return [a[0]/n,a[1]/n,a[2]/n] }
-  let c0 = norm(col[0])
-  let c1 = [col[1][0]-dot(col[1],c0)*c0[0], col[1][1]-dot(col[1],c0)*c0[1], col[1][2]-dot(col[1],c0)*c0[2]]
-  c1 = norm(c1)
-  // c2 = c0 × c1
-  const c2 = [c0[1]*c1[2]-c0[2]*c1[1], c0[2]*c1[0]-c0[0]*c1[2], c0[0]*c1[1]-c0[1]*c1[0]]
-  return [c0[0],c0[1],c0[2], c1[0],c1[1],c1[2], c2[0],c2[1],c2[2]]   // row-major, rows = axes
-}
-
-// Exact 1D optimal transport: map foot's p-th percentile → ref's p-th
-// percentile. Domain knots = foot quantiles, range knots = ref quantiles, so an
-// identical pair gives the identity map. Monotone by construction.
-function build1DMap(fv: Float32Array, rv: Float32Array): IDT1DMap {
-  const fs = Float32Array.from(fv).sort()
-  const rs = Float32Array.from(rv).sort()
-  const q = (arr: Float32Array, t: number) => {
-    const x = t * (arr.length - 1), i = x | 0
-    return i >= arr.length - 1 ? arr[arr.length - 1] : arr[i] + (arr[i + 1] - arr[i]) * (x - i)
-  }
-  const dom = new Float32Array(IDT_KNOTS + 1)
-  const out = new Float32Array(IDT_KNOTS + 1)
-  for (let k = 0; k <= IDT_KNOTS; k++) { const p = k / IDT_KNOTS; dom[k] = q(fs, p); out[k] = q(rs, p) }
-  // ensure strictly increasing domain for safe interpolation
-  for (let k = 1; k <= IDT_KNOTS; k++) if (dom[k] <= dom[k - 1]) dom[k] = dom[k - 1] + 1e-6
-  // smooth the displacement (2 passes) to keep each 1D map gentle & kink-free —
-  // less per-iteration sharpness → fewer color breaks in the composed transport
-  const disp = new Float32Array(IDT_KNOTS + 1)
-  for (let k = 0; k <= IDT_KNOTS; k++) disp[k] = out[k] - dom[k]
-  for (let pass = 0; pass < 2; pass++)
-    for (let k = 1; k < IDT_KNOTS; k++) disp[k] = disp[k - 1] * 0.2 + disp[k] * 0.6 + disp[k + 1] * 0.2
-  for (let k = 0; k <= IDT_KNOTS; k++) out[k] = dom[k] + disp[k]
-  return { dom, out }
-}
-function apply1DMap(m: IDT1DMap, x: number): number {
-  const dom = m.dom, out = m.out, n = IDT_KNOTS
-  if (x <= dom[0])  return out[0] + (x - dom[0])                       // linear extrapolation
-  if (x >= dom[n])  return out[n] + (x - dom[n])
-  let lo = 0, hi = n
-  while (hi - lo > 1) { const mid = (lo + hi) >> 1; if (dom[mid] <= x) lo = mid; else hi = mid }
-  const t = (x - dom[lo]) / (dom[hi] - dom[lo])
-  return out[lo] + (out[hi] - out[lo]) * t
-}
-
-// solve the IDT chain that morphs the foot cloud into the ref distribution
-function solveIDT(footCloud: number[], refCloud: number[]): IDTStep[] {
-  const sub = (cloud: number[]): Float32Array => {
-    const n = cloud.length / 3
-    if (n <= IDT_MAXN) return Float32Array.from(cloud)
-    const out = new Float32Array(IDT_MAXN * 3)
-    const stride = n / IDT_MAXN
-    for (let i = 0; i < IDT_MAXN; i++) {
-      const si = (Math.floor(i * stride)) * 3
-      out[i*3] = cloud[si]; out[i*3+1] = cloud[si+1]; out[i*3+2] = cloud[si+2]
+// k-means in Oklab with deterministic k-means++ init → color palette + weights
+function kmeansOklab(pts: number[], k: number): { c: number[][]; pop: number[] } {
+  const total = Math.floor(pts.length / 3)
+  const step = total > KM_MAXN ? Math.floor(total / KM_MAXN) : 1
+  const S: number[] = []
+  for (let i = 0; i < total; i += step) S.push(pts[i*3], pts[i*3+1], pts[i*3+2])
+  const n = Math.floor(S.length / 3)
+  const rng = (() => { let s = 0x51ed17 >>> 0; return () => { s += 0x6D2B79F5; let t = Math.imul(s ^ (s >>> 15), s | 1); t ^= t + Math.imul(t ^ (t >>> 7), t | 61); return ((t ^ (t >>> 14)) >>> 0) / 4294967296 } })()
+  const c: number[][] = [[S[0], S[1], S[2]]]
+  const d2 = new Float64Array(n)
+  for (let ci = 1; ci < k; ci++) {
+    let sum = 0
+    for (let i = 0; i < n; i++) {
+      let m = Infinity
+      for (const ce of c) { const dl = S[i*3]-ce[0], da = S[i*3+1]-ce[1], db = S[i*3+2]-ce[2]; const d = dl*dl+da*da+db*db; if (d < m) m = d }
+      d2[i] = m; sum += m
     }
-    return out
+    let r = rng() * sum, pick = n - 1
+    for (let i = 0; i < n; i++) { r -= d2[i]; if (r <= 0) { pick = i; break } }
+    c.push([S[pick*3], S[pick*3+1], S[pick*3+2]])
   }
-  const F = sub(footCloud), R = sub(refCloud)
-  const nf = F.length / 3, nr = R.length / 3
-  if (nf < 40 || nr < 40) return []
-  const rng = makeRng(IDT_SEED)
-  const steps: IDTStep[] = []
-  const fp0 = new Float32Array(nf), fp1 = new Float32Array(nf), fp2 = new Float32Array(nf)
-  const rp0 = new Float32Array(nr), rp1 = new Float32Array(nr), rp2 = new Float32Array(nr)
-
-  for (let it = 0; it < IDT_ITERS; it++) {
-    const rot = it === 0
-      ? [1,0,0, 0,1,0, 0,0,1]              // first pass along native L,a,b axes
-      : randomRotation(rng)
-    for (let i = 0; i < nf; i++) {
-      const x = F[i*3], y = F[i*3+1], z = F[i*3+2]
-      fp0[i] = rot[0]*x+rot[1]*y+rot[2]*z
-      fp1[i] = rot[3]*x+rot[4]*y+rot[5]*z
-      fp2[i] = rot[6]*x+rot[7]*y+rot[8]*z
+  const pop = new Array(k).fill(0)
+  for (let it = 0; it < 14; it++) {
+    const sum = Array.from({ length: k }, () => [0, 0, 0]); pop.fill(0)
+    for (let i = 0; i < n; i++) {
+      let m = Infinity, bi = 0
+      for (let ci = 0; ci < k; ci++) { const ce = c[ci]; const dl = S[i*3]-ce[0], da = S[i*3+1]-ce[1], db = S[i*3+2]-ce[2]; const d = dl*dl+da*da+db*db; if (d < m) { m = d; bi = ci } }
+      sum[bi][0] += S[i*3]; sum[bi][1] += S[i*3+1]; sum[bi][2] += S[i*3+2]; pop[bi]++
     }
-    for (let i = 0; i < nr; i++) {
-      const x = R[i*3], y = R[i*3+1], z = R[i*3+2]
-      rp0[i] = rot[0]*x+rot[1]*y+rot[2]*z
-      rp1[i] = rot[3]*x+rot[4]*y+rot[5]*z
-      rp2[i] = rot[6]*x+rot[7]*y+rot[8]*z
-    }
-    const m0 = build1DMap(fp0, rp0), m1 = build1DMap(fp1, rp1), m2 = build1DMap(fp2, rp2)
-    steps.push({ rot, maps: [m0, m1, m2] })
-    // move foot cloud: p += Σ_k (map_k(proj_k) − proj_k) · axis_k  (rows of rot)
-    for (let i = 0; i < nf; i++) {
-      const d0 = apply1DMap(m0, fp0[i]) - fp0[i]
-      const d1 = apply1DMap(m1, fp1[i]) - fp1[i]
-      const d2 = apply1DMap(m2, fp2[i]) - fp2[i]
-      F[i*3]   += d0*rot[0] + d1*rot[3] + d2*rot[6]
-      F[i*3+1] += d0*rot[1] + d1*rot[4] + d2*rot[7]
-      F[i*3+2] += d0*rot[2] + d1*rot[5] + d2*rot[8]
-    }
+    for (let ci = 0; ci < k; ci++) if (pop[ci] > 0) c[ci] = [sum[ci][0]/pop[ci], sum[ci][1]/pop[ci], sum[ci][2]/pop[ci]]
   }
-  return steps
+  return { c, pop }
 }
 
-// replay the chain on one Oklab point
-function replayIDT(steps: IDTStep[], L: number, A: number, B: number): [number, number, number] {
-  let x = L, y = A, z = B
-  for (let it = 0; it < steps.length; it++) {
-    const { rot, maps } = steps[it]
-    const p0 = rot[0]*x+rot[1]*y+rot[2]*z
-    const p1 = rot[3]*x+rot[4]*y+rot[5]*z
-    const p2 = rot[6]*x+rot[7]*y+rot[8]*z
-    const d0 = apply1DMap(maps[0], p0) - p0
-    const d1 = apply1DMap(maps[1], p1) - p1
-    const d2 = apply1DMap(maps[2], p2) - p2
-    x += d0*rot[0] + d1*rot[3] + d2*rot[6]
-    y += d0*rot[1] + d1*rot[4] + d2*rot[7]
-    z += d0*rot[2] + d1*rot[5] + d2*rot[8]
+interface ClusterMap { fc: number[][]; tgt: number[][]; sig2: number }
+
+// match footage palette → reference palette by similarity, build per-cluster targets
+function buildClusterMap(foot: number[], ref: number[]): ClusterMap | null {
+  if (foot.length < 900 || ref.length < 900) return null
+  const F = kmeansOklab(foot, KM_K), R = kmeansOklab(ref, KM_K)
+  const Fc = F.c, Rc = R.c
+  const refTotal = Math.max(1, ref.length / 3)
+  const ch = (c: number[]) => Math.hypot(c[1], c[2])
+  const hue = (c: number[]) => Math.atan2(c[2], c[1])
+  const tgt: number[][] = []
+  for (let i = 0; i < KM_K; i++) {
+    const fc = Fc[i], fch = ch(fc), fh = hue(fc)
+    let wa = 0, wb = 0, wl = 0, wsum = 0
+    for (let j = 0; j < KM_K; j++) {
+      const rc = Rc[j], rch = ch(rc)
+      // match by ROLE: luminance dominant (bright→bright), chroma-presence
+      // moderate (saturated↔saturated, neutral↔neutral), hue weak — so the LOOK
+      // is free to recolor saturated regions (blue sky → teal/warm) while the
+      // neutral-retention step below keeps grey/cloud regions from being recolored
+      const lumaD = Math.abs(fc[0] - rc[0])
+      const chromaD = Math.abs(fch - rch)
+      const hueW = Math.min(fch, rch) * 1.4
+      const hueD = Math.abs(angDiff(fh, hue(rc))) / Math.PI
+      const cost = lumaD * 3.4 + chromaD * 1.8 + hueD * hueW
+      // sharp (winner-take-most) assignment → identical inputs resolve to a clean
+      // self-match (identity); the RBF apply re-introduces smoothness spatially
+      const w = Math.exp(-cost / 0.07) * (R.pop[j] / refTotal + 0.02)
+      wa += w * rc[1]; wb += w * rc[2]; wl += w * rc[0]; wsum += w
+    }
+    let ta = wa / wsum, tb = wb / wsum
+    // NEUTRAL PRESERVATION — a near-neutral footage cluster (clouds, grey walls,
+    // overcast sky) keeps its OWN near-neutral identity, even if its nearest
+    // reference cluster is saturated. Stops clouds being recolored into blue sky.
+    const retain = fch >= 0.06 ? 0 : fch <= 0.02 ? 0.9 : 0.9 * (1 - (fch - 0.02) / 0.04)
+    ta = ta * (1 - retain) + fc[1] * retain
+    tb = tb * (1 - retain) + fc[2] * retain
+    // hard chroma ceiling on the target too
+    const tch = Math.hypot(ta, tb), maxch = fch * 1.7 + 0.03
+    if (tch > maxch && tch > 1e-5) { const s = maxch / tch; ta *= s; tb *= s }
+    tgt.push([wl / wsum, ta, tb])
   }
-  return [x, y, z]
+  // RBF radius = mean nearest-neighbour spacing of footage clusters
+  let dsum = 0
+  for (let i = 0; i < KM_K; i++) {
+    let m = Infinity
+    for (let j = 0; j < KM_K; j++) { if (i === j) continue; const dl = Fc[i][0]-Fc[j][0], da = Fc[i][1]-Fc[j][1], db = Fc[i][2]-Fc[j][2]; const d = dl*dl+da*da+db*db; if (d < m) m = d }
+    dsum += Math.sqrt(m)
+  }
+  const sig = Math.max(0.05, dsum / KM_K) * 1.2
+  return { fc: Fc, tgt, sig2: 2 * sig * sig }
+}
+
+// smooth RBF blend of per-cluster (a,b) corrections — the content-aware warp
+function applyClusterColor(L: number, a: number, b: number, m: ClusterMap): [number, number] {
+  const fc = m.fc, tgt = m.tgt, K = fc.length
+  let da = 0, db = 0, wsum = 1e-9
+  for (let i = 0; i < K; i++) {
+    const dl = L - fc[i][0], xa = a - fc[i][1], xb = b - fc[i][2]
+    const w = Math.exp(-(dl*dl + xa*xa + xb*xb) / m.sig2)
+    da += w * (tgt[i][1] - fc[i][1]); db += w * (tgt[i][2] - fc[i][2]); wsum += w
+  }
+  return [a + da / wsum, b + db / wsum]
 }
 
 // v6: gamut-aware conversion. Out-of-gamut Oklab → reduce CHROMA toward the
@@ -600,40 +569,20 @@ function oklabToSrgbGamut(L: number, a: number, b: number): [number, number, num
   return [clamp01(r), clamp01(g), clamp01(c)]
 }
 
-// Replay MKL pre-align ∘ IDT residual over an RGB lattice → dense LUT, folding
-// in the skin layer + perceptual guards + gamut compression. Used for the live
-// 33³ preview LUT and the 65³ Precision Grade export.
+// Bake the content-aware color transport + filmic tone over an RGB lattice →
+// dense LUT, folding in the skin layer + perceptual guards + gamut compression.
 interface SkinLayer { skinW: number; skinH: number; skinS: number; skinL: number }
-interface Affine { T: number[]; muF: number[]; muR: number[] }
-function bakeDenseFromSteps(steps: IDTStep[], sk: SkinLayer, size: number, pre?: Affine, tone?: Float32Array): Float32Array {
+function bakeDenseFromClusters(cmap: ClusterMap, sk: SkinLayer, size: number, tone?: Float32Array): Float32Array {
   const N = size
   const lut = new Float32Array(N * N * N * 3)
   let li = 0
   for (let bi = 0; bi < N; bi++) for (let gi = 0; gi < N; gi++) for (let ri = 0; ri < N; ri++) {
     const r0 = ri / (N - 1), g0 = gi / (N - 1), b0 = bi / (N - 1)
     const [oL, oA, oB] = srgbToOklab(r0, g0, b0)
-    // v6: smooth MKL linear transport first (does the bulk), then IDT refines
-    let pL = oL, pA = oA, pB = oB
-    if (pre) {
-      const dL = oL - pre.muF[0], dA = oA - pre.muF[1], dB = oB - pre.muF[2]
-      pL = pre.T[0]*dL + pre.T[1]*dA + pre.T[2]*dB + pre.muR[0]
-      pA = pre.T[3]*dL + pre.T[4]*dA + pre.T[5]*dB + pre.muR[1]
-      pB = pre.T[6]*dL + pre.T[7]*dA + pre.T[8]*dB + pre.muR[2]
-    }
-    const [nL0, nA0, nB0] = replayIDT(steps, pL, pA, pB)
-    // v6: damp the IDT residual toward the smooth MKL base. IDT can over-stretch
-    // tones when the reference is bimodal (crushed shadows + bright highlights),
-    // creating steep slopes → banding. Keeping it anchored to the linear base
-    // caps that steepness while retaining most of the distribution refinement.
-    const IDT_W = 1.0   // v7: full transport — no damping (v6's 0.7 made it "ga pintar")
-    // color (a,b) from the full distribution transfer
-    let nA = pA + (nA0 - pA) * IDT_W
-    let nB = pB + (nB0 - pB) * IDT_W
-    // tone (L) from the Smart Tone Engine — anchored filmic curve is authoritative
-    // (controlled blacks/exposure/highlights); a small clamped IDT-L adds nuance
-    // without letting the distribution overshoot into highlight clipping
-    const idtL = Math.min(1, pL + (nL0 - pL) * IDT_W)
-    let nL = tone ? Math.min(0.996, sampleCurve(tone, oL) * 0.88 + idtL * 0.12) : idtL
+    // COLOR (a,b): content-aware cluster-correspondence warp (clouds→clouds, etc.)
+    let [nA, nB] = applyClusterColor(oL, oA, oB, cmap)
+    // TONE (L): Smart Tone Engine filmic curve (controlled blacks/exposure/highlights)
+    let nL = tone ? sampleCurve(tone, oL) : oL
     const C0 = Math.hypot(oA, oB), Cn = Math.hypot(nA, nB)
     if (C0 > 0.015 && Cn > 1e-5) {
       let h0 = Math.atan2(oB, oA); if (h0 < 0) h0 += TAU
@@ -645,8 +594,7 @@ function bakeDenseFromSteps(steps: IDTStep[], sk: SkinLayer, size: number, pre?:
         hn += angDiff(targetH, hn) * sw
         Cf += (targetC - Cf) * sw
         nL += (oL + sk.skinL - nL) * sw * 0.6
-        // v6: skin never desaturates to grey — keep ≥82% of original chroma
-        const floor = C0 * 0.82
+        const floor = C0 * 0.82                 // skin never grays out
         if (Cf < floor) Cf += (floor - Cf) * sw
       }
       const capW = C0 >= 0.06 ? 1 : C0 <= 0.025 ? 0 : (() => { const t = (C0 - 0.025) / 0.035; return t * t * (3 - 2 * t) })()
@@ -656,22 +604,22 @@ function bakeDenseFromSteps(steps: IDTStep[], sk: SkinLayer, size: number, pre?:
         if (dH >  lim) hn = h0 + lim + (dH - lim) * 0.25
         if (dH < -lim) hn = h0 - lim + (dH + lim) * 0.25
       }
-      const Cmax = C0 * 1.5 + 0.05
+      // saturated regions keep their punch (don't desaturate grass/sky to grey);
+      // neutral pixels have tiny C0 so this is a no-op for them
+      if (sw < 0.5) { const cFloor = C0 * 0.72; if (Cf < cFloor) Cf = cFloor }
+      // tighter chroma ceiling (+0.03) — near-neutral pixels stay near-neutral
+      const Cmax = C0 * 1.55 + 0.03
       if (Cf > Cmax) Cf = Cmax + (Cf - Cmax) * 0.25
       if (Cf > 0.34) Cf = 0.34
       nA = Cf * Math.cos(hn); nB = Cf * Math.sin(hn)
     } else {
-      const Cmax = C0 * 1.5 + 0.05
+      const Cmax = C0 * 1.55 + 0.03
       if (Cn > Cmax) { const k = (Cmax + (Cn - Cmax) * 0.25) / Cn; nA *= k; nB *= k }
     }
     const [mr, mg, mb] = oklabToSrgbGamut(nL, nA, nB)
     lut[li++] = mr; lut[li++] = mg; lut[li++] = mb
   }
-  // Regularize: matching the full distribution can make the transport "sharp"
-  // in spots → banding/color-break on smooth gradients (sky, skin). A light
-  // separable 3D blur of the LUT field removes those breaks while keeping the
-  // look — the standard IDT post-processing (Pitié 2007).
-  smoothLut3D(lut, N, 0.14)   // v7: v5-level smoothness; graying fixed via gamut+IDT_W
+  smoothLut3D(lut, N, 0.12)   // gentle regularization vs banding
   return lut
 }
 
@@ -1122,25 +1070,15 @@ export function computeSmartMatch(foot: ImageData, ref: ImageData): SmartMatchRe
       if (softSkin(rs[i], rs[i + 1], rs[i + 2]) > 0.5) continue
       refCloud.push(rs[i], rs[i + 1], rs[i + 2])
     }
-    // v6: pre-align footage cloud through the smooth MKL transport, then solve
-    // IDT only on the RESIDUAL. MKL handles the bulk (mean+covariance) cleanly;
-    // IDT just refines the leftover distribution shape → far smoother result.
-    const pre: Affine = { T, muF, muR }
-    const footAligned: number[] = []
-    for (let i = 0; i < footCloud.length; i += 3) {
-      const dL = footCloud[i] - muF[0], dA = footCloud[i + 1] - muF[1], dB = footCloud[i + 2] - muF[2]
-      footAligned.push(
-        T[0]*dL + T[1]*dA + T[2]*dB + muR[0],
-        T[3]*dL + T[4]*dA + T[5]*dB + muR[1],
-        T[6]*dL + T[7]*dA + T[8]*dB + muR[2],
-      )
-    }
-    const steps = solveIDT(footAligned, refCloud)
-    if (steps.length) {
+    // v8: content-aware color via cluster correspondence (palette matching) +
+    // Smart Tone Engine for luminance. Like regions map to like regions, so
+    // clouds stay neutral instead of being recolored into blue sky.
+    const cmap = buildClusterMap(footCloud, refCloud)
+    if (cmap) {
       const N = 33                          // transport grid; Precision export upsamples to 65³
       const skin: SkinLayer = { skinW, skinH, skinS, skinL }
-      const tone = buildSmartTone(F.histL, R.histL)   // v7: filmic landmark tone
-      const lut = bakeDenseFromSteps(steps, skin, N, pre, tone)
+      const tone = buildSmartTone(F.histL, R.histL)   // filmic landmark tone
+      const lut = bakeDenseFromClusters(cmap, skin, N, tone)
       denseLut = { lut, size: N }
       lutSize = N
       lutId = registerDenseLut(lut, N)
@@ -1201,13 +1139,17 @@ export function computeSmartMatch(foot: ImageData, ref: ImageData): SmartMatchRe
     const colorErr = massBoth ? errSum / massBoth : 0
     const uncovered = massRef ? massUncov / massRef : 0
 
-    confidence = Math.round(100 * (1 - 1.6 * emd - 0.45 * colorErr - 0.4 * uncovered))
-    confidence = Math.max(40, Math.min(99, confidence))
+    // v8: the content-aware engine intentionally PRESERVES footage content
+    // (clouds stay clouds) rather than forcing the full reference distribution,
+    // so the old coverage penalties are softened — they were calibrated for raw
+    // distribution transfer and unfairly floored an otherwise-good match.
+    confidence = Math.round(100 * (1 - 1.35 * emd - 0.28 * colorErr - 0.22 * uncovered))
+    confidence = Math.max(45, Math.min(99, confidence))
 
-    if (uncovered >= 0.18 && worstUncov >= 0) {
+    if (uncovered >= 0.25 && worstUncov >= 0) {
       notes.push(`Referensi punya warna ${BAND_NAMES[worstUncov]} dominan yang tidak ada di footage — bagian look itu dilewati`)
     }
-    if (denseLut) notes.push('Engine presisi aktif — seluruh distribusi warna dicocokkan (bukan cuma rata-rata)')
+    if (denseLut) notes.push('Content-aware aktif — region dicocokkan per konten (langit↔langit, kulit dijaga)')
     if (skinP === 1) notes.push('Referensi tanpa skin tone — warna kulit footage diproteksi otomatis')
     else if (skinW === 1 && skinFracR >= 0.01) notes.push('Skin tone di-match langsung ke skin referensi')
     if (confidence < 72) notes.push('Konten cukup berbeda — coba Match Strength 60–70% untuk hasil lebih natural')
