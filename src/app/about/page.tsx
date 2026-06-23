@@ -162,7 +162,7 @@ export default function AboutPage() {
               Sepowerful apa <span className="italic text-accent">engine-nya?</span>
             </h2>
             <p className="text-t2 text-sm max-w-xl mx-auto leading-relaxed">
-              Smart Match Engine v6 dibangun di atas riset color science yang dipakai
+              Smart Match Engine v7 dibangun di atas riset color science yang dipakai
               industri film (Reinhard 2001, Pitié-Kokaram 2007) — lalu dikembangkan jauh melampauinya.
               Semua berjalan di perangkatmu, dalam hitungan detik.
             </p>
@@ -352,7 +352,7 @@ export default function AboutPage() {
       <section className="border-t border-b border-b1 bg-s2">
         <div className="max-w-5xl mx-auto px-6 py-14 grid grid-cols-2 md:grid-cols-4 gap-8 text-center">
           {[
-            { n: 'V6',     label: 'Generasi engine sekarang' },
+            { n: 'V7',     label: 'Generasi engine sekarang' },
             { n: '0',      label: 'Foto di-upload ke server' },
             { n: '8',      label: 'Format log — rumus exact' },
             { n: '24',     label: 'Sel koreksi per match' },

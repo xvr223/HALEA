@@ -353,7 +353,7 @@ function castName(da: number, db: number): string {
 // so we replay it over an RGB lattice to bake a dense 3D LUT.
 // ══════════════════════════════════════════════════════════════════════════════
 
-const IDT_ITERS = 16            // v6: fewer iters — MKL pre-aligns, IDT only refines residual
+const IDT_ITERS = 22            // v7: full smart transport (v6's 16 was too weak)
 const IDT_KNOTS = 28
 const IDT_MAXN  = 7000          // subsample cap per cloud
 const IDT_SEED  = 0x9e3779b1    // fixed → deterministic results
@@ -493,20 +493,24 @@ function replayIDT(steps: IDTStep[], L: number, A: number, B: number): [number, 
 // achromatic axis (preserving hue & lightness) until in [0,1], instead of
 // per-channel hard clamp (which shifts hue and causes "warna pecah" on vivid
 // colors). A soft inset margin keeps highlights from hard-edging.
-function inGamut(r: number, g: number, b: number): boolean {
-  return r >= -0.0015 && r <= 1.0015 && g >= -0.0015 && g <= 1.0015 && b >= -0.0015 && b <= 1.0015
-}
+// v7: vivid-preserving gamut handling. Mildly out-of-gamut colors are just
+// clamped per-channel (keeps saturation/punch like v5 — no graying). Only
+// SEVERELY out-of-gamut colors get a partial chroma pull-back, and even then
+// not all the way to gray — just enough to avoid ugly hue breaks.
 function oklabToSrgbGamut(L: number, a: number, b: number): [number, number, number] {
   const [r0, g0, b0] = oklabToSrgb(L, a, b)
-  if (inGamut(r0, g0, b0)) return [clamp01(r0), clamp01(g0), clamp01(b0)]
-  let lo = 0, hi = 1
-  for (let it = 0; it < 14; it++) {
+  const over = Math.max(0, -r0, -g0, -b0, r0 - 1, g0 - 1, b0 - 1)
+  if (over < 0.085) return [clamp01(r0), clamp01(g0), clamp01(b0)]   // mild → clamp, stay vivid
+  // severe → reduce chroma toward (but not below) 70% so it never grays out
+  let lo = 0.7, hi = 1
+  for (let it = 0; it < 12; it++) {
     const mid = (lo + hi) / 2
-    const [r, g, b2] = oklabToSrgb(L, a * mid, b * mid)
-    if (inGamut(r, g, b2)) lo = mid; else hi = mid
+    const [r, g, c] = oklabToSrgb(L, a * mid, b * mid)
+    const o = Math.max(0, -r, -g, -c, r - 1, g - 1, c - 1)
+    if (o < 0.04) hi = mid; else lo = mid
   }
-  const [r, g, b2] = oklabToSrgb(L, a * lo, b * lo)
-  return [clamp01(r), clamp01(g), clamp01(b2)]
+  const [r, g, c] = oklabToSrgb(L, a * hi, b * hi)
+  return [clamp01(r), clamp01(g), clamp01(c)]
 }
 
 // Replay MKL pre-align ∘ IDT residual over an RGB lattice → dense LUT, folding
@@ -534,7 +538,7 @@ function bakeDenseFromSteps(steps: IDTStep[], sk: SkinLayer, size: number, pre?:
     // tones when the reference is bimodal (crushed shadows + bright highlights),
     // creating steep slopes → banding. Keeping it anchored to the linear base
     // caps that steepness while retaining most of the distribution refinement.
-    const IDT_W = 0.7
+    const IDT_W = 1.0   // v7: full transport — no damping (v6's 0.7 made it "ga pintar")
     let nL = pL + (nL0 - pL) * IDT_W
     let nA = pA + (nA0 - pA) * IDT_W
     let nB = pB + (nB0 - pB) * IDT_W
@@ -575,7 +579,7 @@ function bakeDenseFromSteps(steps: IDTStep[], sk: SkinLayer, size: number, pre?:
   // in spots → banding/color-break on smooth gradients (sky, skin). A light
   // separable 3D blur of the LUT field removes those breaks while keeping the
   // look — the standard IDT post-processing (Pitié 2007).
-  smoothLut3D(lut, N, 0.18)
+  smoothLut3D(lut, N, 0.14)   // v7: v5-level smoothness; graying fixed via gamut+IDT_W
   return lut
 }
 
