@@ -167,6 +167,36 @@ function applyNodes(r:number,g:number,b:number,nodes:GradeNode[]):[number,number
   return[r,g,b]
 }
 
+// ── Synthetic reference ─────────────────────────────────────────────────────
+// Renders an AI grade recipe onto a canonical neutral+memory test scene, so a
+// TEXT PROMPT can be reverse-engineered by the exact same v8 content-aware engine
+// (cluster correspondence + split-tone cast + Smart Tone + skin) as a real photo.
+// The neutral ramp carries the split-tone & tonal landmarks; the memory colours
+// (skin/sky/foliage/…) give the engine content clusters to match the footage to.
+function buildSynthRef(nodes:GradeNode[]):ImageData{
+  const base:[number,number,number,number][]=[]   // r,g,b,count
+  for(let i=0;i<22;i++){const v=12+Math.round((243-12)*i/21);base.push([v,v,v,130])}  // neutral luma ramp
+  const mem:[number,number,number,number][]=[
+    [205,152,120,150],[156,112,86,90],   // skin (lit / shadow)
+    [120,158,205,150],[150,182,216,90],  // sky / pale sky
+    [86,120,62,130],[52,76,44,90],       // foliage / deep green
+    [168,126,82,90],[112,82,56,80],      // tan wood / brown
+    [240,237,232,80],[24,26,31,90],      // white highlight / near-black
+    [128,128,128,150],[182,180,178,90],  // mid grey / light grey
+    [188,72,60,60],                      // warm red accent
+  ]
+  for(const mc of mem)base.push(mc)
+  const buf:number[]=[];let seed=12345
+  const j=()=>{seed=(seed*16807)%2147483647;return(seed/2147483647-0.5)*11}   // deterministic jitter
+  for(const[r,g,b,c]of base)for(let k=0;k<c;k++)buf.push(clamp(r+j(),0,255),clamp(g+j(),0,255),clamp(b+j(),0,255))
+  const n=buf.length/3,data=new Uint8ClampedArray(n*4)
+  for(let i=0;i<n;i++){
+    const[gr,gg,gb]=applyNodes(buf[i*3]/255,buf[i*3+1]/255,buf[i*3+2]/255,nodes)
+    data[i*4]=Math.round(gr*255);data[i*4+1]=Math.round(gg*255);data[i*4+2]=Math.round(gb*255);data[i*4+3]=255
+  }
+  return{data,width:n,height:1,colorSpace:'srgb'} as ImageData
+}
+
 function bakeLUT(nodes:GradeNode[],size:number,skinGuard=false,logProfile:LogProfile='rec709',logGain=1):Float32Array{
   const lut=new Float32Array(size**3*3);let i=0
   for(let bi=0;bi<size;bi++)for(let gi=0;gi<size;gi++)for(let ri=0;ri<size;ri++){
@@ -500,22 +530,62 @@ ${ctx}`
       }
 
       const shSat=num(S.shadowSat,0,0.35), hiSat=num(S.highlightSat,0,0.35)
-      const newNodes:GradeNode[] = [
+      // the AI's creative intent, as a parametric grade recipe
+      const aiNodes:GradeNode[] = [
         { id:mkId(), type:'primary', enabled:true, params:{...prim} },
         { id:mkId(), type:'hsl',     enabled:hslActive, params:hslP },
         { id:mkId(), type:'split',   enabled:shSat>0.01||hiSat>0.01, params:{ shHue:num(S.shadowHue,0,360,30), shSat, hiHue:num(S.highlightHue,0,360,45), hiSat, balance:num(S.balance,-0.3,0.3) } },
         { id:mkId(), type:'halation',enabled:hal>0.04, params:{ threshold:0.65, intensity:hal } },
       ]
-      trimBase.current = { ...prim }
-      setNodes(newNodes)
-      setRefImg(null); setRefData(null); setLut(null)   // AI mode — no reference
-      setGrade({
-        temp:prim.temp, tint:prim.tint, con:prim.con, gamma:prim.gamma, sat:prim.sat, lift:prim.lift,
-        halation:hal, look:'ai', lookAmount:0, matched:false,
-        desc:String(j.desc||j.name||'AI Look'), toneDesc:String(j.name||'AI Look'),
-      })
-      if (j.name) setLutName(String(j.name).replace(/\s+/g,'_').slice(0,24))
-      toast('✦ AI Look: ' + (j.name||promptText))
+      const lookName = String(j.name||'AI Look')
+      if (j.name) setLutName(lookName.replace(/\s+/g,'_').slice(0,24))
+
+      if (footImg) {
+        // ── SMART AI LOOK ── render the recipe onto a canonical scene, then run the
+        // SAME v8 content-aware engine as a real reference photo (cluster matching +
+        // split-tone cast + Smart Tone + skin) so the prompt look is just as canggih.
+        const synthRef = buildSynthRef(aiNodes)
+        const normFoot = convertImageData(footImg, logProfile, logGain)
+        const m = computeSmartMatch(normFoot, synthRef)
+        const zp:Record<string,number>={}
+        for(let i=0;i<24;i++){zp['zh'+i]=m.zoneH[i];zp['zs'+i]=m.zoneS[i];zp['zl'+i]=m.zoneL[i]}
+        trimBase.current = { ...ZERO_TRIM }
+        setNodes([
+          { id:mkId(), type:'match', enabled:true, params:{
+              m0:m.matrix[0],m1:m.matrix[1],m2:m.matrix[2],m3:m.matrix[3],m4:m.matrix[4],
+              m5:m.matrix[5],m6:m.matrix[6],m7:m.matrix[7],m8:m.matrix[8],
+              fL:m.muF[0],fa:m.muF[1],fb:m.muF[2],rL:m.muR[0],ra:m.muR[1],rb:m.muR[2],
+              curve:Array.from(m.curve).map(v=>v.toFixed(5)).join(','),
+              bh0:m.bandH[0],bh1:m.bandH[1],bh2:m.bandH[2],bh3:m.bandH[3],bh4:m.bandH[4],bh5:m.bandH[5],bh6:m.bandH[6],bh7:m.bandH[7],
+              bs0:m.bandS[0],bs1:m.bandS[1],bs2:m.bandS[2],bs3:m.bandS[3],bs4:m.bandS[4],bs5:m.bandS[5],bs6:m.bandS[6],bs7:m.bandS[7],
+              bl0:m.bandL[0],bl1:m.bandL[1],bl2:m.bandL[2],bl3:m.bandL[3],bl4:m.bandL[4],bl5:m.bandL[5],bl6:m.bandL[6],bl7:m.bandL[7],
+              skh:m.skinH,sks:m.skinS,skl:m.skinL,skw:m.skinW,skp:m.skinP,
+              ...zp,
+              ...(m.lutId?{lutId:m.lutId}:{}),
+              amount:matchAmount } },
+          { id:mkId(), type:'primary', enabled:true, params:{ ...ZERO_TRIM } },
+          { id:mkId(), type:'halation', enabled:Math.max(m.halation,hal)>0.05, params:{ threshold:0.65, intensity:Math.max(m.halation,hal) } },
+        ])
+        setRefImg(null); setRefData(null); setLut(null)
+        setGrade({
+          temp:m.derived.temp, tint:m.derived.tint, con:m.derived.con, gamma:m.derived.gamma,
+          sat:m.derived.sat, lift:Math.max(0,m.curve[0]), halation:Math.max(m.halation,hal),
+          look:'ai', lookAmount:0, matched:true, desc:String(j.desc||lookName), toneDesc:lookName,
+          shadowCast:m.shadowCast, highCast:m.highCast, satRatio:m.satRatio, confidence:m.confidence, notes:m.notes,
+        })
+        toast(`✦ AI Look ${m.confidence}% — ${lookName}`)
+      } else {
+        // no footage uploaded → parametric look preview (global grade, no engine)
+        trimBase.current = { ...prim }
+        setNodes(aiNodes)
+        setRefImg(null); setRefData(null); setLut(null)
+        setGrade({
+          temp:prim.temp, tint:prim.tint, con:prim.con, gamma:prim.gamma, sat:prim.sat, lift:prim.lift,
+          halation:hal, look:'ai', lookAmount:0, matched:false,
+          desc:String(j.desc||lookName), toneDesc:lookName,
+        })
+        toast('✦ AI Look: ' + lookName)
+      }
     } catch {
       if (!isAdmin) addCredits(aiChatCost)   // refund on failure
       toast('Gagal generate look — coba lagi / ubah prompt', 'err')
