@@ -573,7 +573,7 @@ function oklabToSrgbGamut(L: number, a: number, b: number): [number, number, num
 
 // Bake the content-aware color transport + filmic tone over an RGB lattice →
 // dense LUT, folding in the skin layer + perceptual guards + gamut compression.
-interface SkinLayer { skinW: number; skinH: number; skinS: number; skinL: number }
+interface SkinLayer { skinW: number; skinH: number; skinS: number; skinL: number; skinP: number }
 function bakeDenseFromClusters(cmap: ClusterMap, sk: SkinLayer, size: number, tone?: Float32Array): Float32Array {
   const N = size
   const lut = new Float32Array(N * N * N * 3)
@@ -592,12 +592,34 @@ function bakeDenseFromClusters(cmap: ClusterMap, sk: SkinLayer, size: number, to
       let Cf = Cn
       const sw = softSkin(oL, oA, oB) * sk.skinW
       if (sw > 0.001) {
-        const targetH = h0 + sk.skinH, targetC = C0 * sk.skinS
-        hn += angDiff(targetH, hn) * sw
-        Cf += (targetC - Cf) * sw
-        nL += (oL + sk.skinL - nL) * sw * 0.6
-        const floor = C0 * 0.82                 // skin never grays out
-        if (Cf < floor) Cf += (floor - Cf) * sw
+        // Skin JOINS the look (warms, cools & tones WITH the reference) instead of
+        // being frozen to the raw original — but it stays believable: the hue swing
+        // away from the natural skin hue is soft-capped (can't go green/teal/magenta)
+        // and chroma is held inside a skin band (no graying, no clown-orange).
+        // (a) exposure: skin rides the look's tone + a measured skin-L nudge
+        const lSkin = nL + sk.skinL
+        // (b) hue: start from the LOOK's hue; if the reference has real skin, bias
+        //     toward that measured skin-to-skin shift; then soft-cap the swing.
+        let hWanted = hn
+        if (sk.skinP === 0 && sk.skinH !== 0) hWanted = hn + angDiff(h0 + sk.skinH, hn) * 0.55
+        let dH = angDiff(hWanted, h0)
+        const SW_CAP = 0.32                       // ~18° believable skin swing
+        if (dH >  SW_CAP) dH = SW_CAP + (dH - SW_CAP) * 0.2
+        if (dH < -SW_CAP) dH = -SW_CAP + (dH + SW_CAP) * 0.2
+        const hSkin = h0 + dH
+        // (c) chroma: follow the look, biased toward the reference skin's chroma
+        //     ratio when known, clamped to a believable band
+        const cBand = sk.skinP === 0 ? C0 * sk.skinS : Cf
+        let cSkin = Cf + (cBand - Cf) * 0.5
+        // keep skin SOFT — chroma may dip for filmic softness but barely rises,
+        // so the grade can warm skin without it ever reading as harsh/clown-orange
+        const cLo = C0 * 0.70, cHi = C0 * 1.08
+        if (cSkin < cLo) cSkin = cLo
+        if (cSkin > cHi) cSkin = cHi
+        // blend look ↔ skin-treated by skin confidence (partial-skin edges stay smooth)
+        hn = hn + angDiff(hSkin, hn) * sw
+        Cf = Cf + (cSkin - Cf) * sw
+        nL = nL + (lSkin - nL) * sw
       }
       const capW = C0 >= 0.06 ? 1 : C0 <= 0.025 ? 0 : (() => { const t = (C0 - 0.025) / 0.035; return t * t * (3 - 2 * t) })()
       if (capW > 0.05) {
@@ -1080,7 +1102,7 @@ export function computeSmartMatch(foot: ImageData, ref: ImageData): SmartMatchRe
     const cmap = buildClusterMap(footCloud, refCloud)
     if (cmap) {
       const N = 33                          // transport grid; Precision export upsamples to 65³
-      const skin: SkinLayer = { skinW, skinH, skinS, skinL }
+      const skin: SkinLayer = { skinW, skinH, skinS, skinL, skinP }
       const tone = buildSmartTone(F.histL, R.histL)   // filmic landmark tone
       const lut = bakeDenseFromClusters(cmap, skin, N, tone)
       denseLut = { lut, size: N }
