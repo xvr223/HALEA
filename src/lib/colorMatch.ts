@@ -480,6 +480,46 @@ function kmeansOklab(pts: number[], k: number): { c: number[][]; pop: number[] }
   return { c, pop }
 }
 
+// ── Split-tone / tonal colour cast ──────────────────────────────────────────
+// The single biggest contributor to a "look" feeling like the reference is its
+// tone-dependent colour cast: the film-stock tint that pushes shadows one way
+// (often teal/green) and highlights another (often warm), INCLUDING on neutrals
+// and greys. Cluster correspondence only recolours saturated regions, so a mostly
+// grey/overcast scene barely moves without this. We estimate the cast per luma
+// zone, weighting DOWN saturated pixels (those are memory colours handled by the
+// clusters) so the cast reflects the reference's neutral/mid tint — its true grade.
+interface ToneCast { binA: number[]; binB: number[]; nb: number }
+function buildToneCast(foot: number[], ref: number[]): ToneCast | null {
+  if (foot.length < 900 || ref.length < 900) return null
+  const NB = 5
+  const acc = (pts: number[]) => {
+    const a = new Float64Array(NB), b = new Float64Array(NB), w = new Float64Array(NB)
+    for (let i = 0; i < pts.length; i += 3) {
+      const L = pts[i], C = Math.hypot(pts[i + 1], pts[i + 2])
+      let k = Math.floor(L * NB); if (k < 0) k = 0; if (k >= NB) k = NB - 1
+      const wt = Math.exp(-C * 15)         // neutral/mid pixels define the cast
+      a[k] += pts[i + 1] * wt; b[k] += pts[i + 2] * wt; w[k] += wt
+    }
+    const oa: number[] = [], ob: number[] = []
+    for (let k = 0; k < NB; k++) { oa.push(w[k] > 1e-6 ? a[k] / w[k] : 0); ob.push(w[k] > 1e-6 ? b[k] / w[k] : 0) }
+    return { oa, ob }
+  }
+  const F = acc(foot), R = acc(ref)
+  const binA: number[] = [], binB: number[] = []
+  for (let k = 0; k < NB; k++) { binA.push(R.oa[k] - F.oa[k]); binB.push(R.ob[k] - F.ob[k]) }
+  // light smoothing across bins so the cast varies gently with luma
+  const sm = (arr: number[]) => arr.map((v, k) => (arr[Math.max(0, k - 1)] + 2 * v + arr[Math.min(arr.length - 1, k + 1)]) / 4)
+  return { binA: sm(binA), binB: sm(binB), nb: NB }
+}
+function sampleCast(c: ToneCast, L: number): [number, number] {
+  const NB = c.nb
+  const x = L * NB - 0.5
+  let k = Math.floor(x), t = x - k
+  if (k < 0) { k = 0; t = 0 }
+  if (k >= NB - 1) { k = NB - 2; t = 1 }
+  return [c.binA[k] * (1 - t) + c.binA[k + 1] * t, c.binB[k] * (1 - t) + c.binB[k + 1] * t]
+}
+
 interface ClusterMap { fc: number[][]; tgt: number[][]; sig2: number }
 
 // match footage palette → reference palette by similarity, build per-cluster targets
@@ -574,7 +614,7 @@ function oklabToSrgbGamut(L: number, a: number, b: number): [number, number, num
 // Bake the content-aware color transport + filmic tone over an RGB lattice →
 // dense LUT, folding in the skin layer + perceptual guards + gamut compression.
 interface SkinLayer { skinW: number; skinH: number; skinS: number; skinL: number; skinP: number }
-function bakeDenseFromClusters(cmap: ClusterMap, sk: SkinLayer, size: number, tone?: Float32Array): Float32Array {
+function bakeDenseFromClusters(cmap: ClusterMap, sk: SkinLayer, size: number, tone?: Float32Array, cast?: ToneCast): Float32Array {
   const N = size
   const lut = new Float32Array(N * N * N * 3)
   let li = 0
@@ -583,6 +623,16 @@ function bakeDenseFromClusters(cmap: ClusterMap, sk: SkinLayer, size: number, to
     const [oL, oA, oB] = srgbToOklab(r0, g0, b0)
     // COLOR (a,b): content-aware cluster-correspondence warp (clouds→clouds, etc.)
     let [nA, nB] = applyClusterColor(oL, oA, oB, cmap)
+    // SPLIT-TONE (a,b): impose the reference's tone-dependent colour cast so the
+    // LOOK lands even on neutrals/greys (shadows & highlights get the film tint).
+    // Derived from the reference's neutral/mid pixels, so it's the grade's cast —
+    // not a re-tint of memory colours, and gentle enough to keep whites clean.
+    if (cast) {
+      const [ca, cb] = sampleCast(cast, oL)
+      let cs = 0.75
+      if (oL > 0.85) cs *= Math.max(0, 1 - (oL - 0.85) / 0.13)   // protect near-whites/clouds
+      nA += ca * cs; nB += cb * cs
+    }
     // TONE (L): Smart Tone Engine filmic curve (controlled blacks/exposure/highlights)
     let nL = tone ? sampleCurve(tone, oL) : oL
     const C0 = Math.hypot(oA, oB), Cn = Math.hypot(nA, nB)
@@ -1104,7 +1154,8 @@ export function computeSmartMatch(foot: ImageData, ref: ImageData): SmartMatchRe
       const N = 33                          // transport grid; Precision export upsamples to 65³
       const skin: SkinLayer = { skinW, skinH, skinS, skinL, skinP }
       const tone = buildSmartTone(F.histL, R.histL)   // filmic landmark tone
-      const lut = bakeDenseFromClusters(cmap, skin, N, tone)
+      const cast = buildToneCast(footCloud, refCloud) || undefined  // split-tone cast
+      const lut = bakeDenseFromClusters(cmap, skin, N, tone, cast)
       denseLut = { lut, size: N }
       lutSize = N
       lutId = registerDenseLut(lut, N)
