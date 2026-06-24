@@ -173,9 +173,17 @@ function applyNodes(r:number,g:number,b:number,nodes:GradeNode[]):[number,number
 // (cluster correspondence + split-tone cast + Smart Tone + skin) as a real photo.
 // The neutral ramp carries the split-tone & tonal landmarks; the memory colours
 // (skin/sky/foliage/…) give the engine content clusters to match the footage to.
-function buildSynthRef(nodes:GradeNode[]):ImageData{
+function buildSynthRef(nodes:GradeNode[],foot?:ImageData):ImageData{
   const base:[number,number,number,number][]=[]   // r,g,b,count
-  for(let i=0;i<22;i++){const v=12+Math.round((243-12)*i/21);base.push([v,v,v,130])}  // neutral luma ramp
+  if(foot){
+    // Seed neutrals from the FOOTAGE's own luma distribution, so Smart Tone applies
+    // ONLY the look's tonal transform (exposure/contrast/lift) — not a spurious
+    // re-exposure toward an arbitrary ramp (which washed blacks / over-brightened).
+    const d=foot.data, target=3000, stride=Math.max(4,Math.floor((d.length/4)/target))*4
+    for(let i=0;i+2<d.length;i+=stride){const L=Math.round(0.2126*d[i]+0.7152*d[i+1]+0.0722*d[i+2]);base.push([L,L,L,1])}
+  }else{
+    for(let i=0;i<22;i++){const v=12+Math.round((243-12)*i/21);base.push([v,v,v,130])}  // generic ramp (no footage)
+  }
   const mem:[number,number,number,number][]=[
     [205,152,120,150],[156,112,86,90],   // skin (lit / shadow)
     [120,158,205,150],[150,182,216,90],  // sky / pale sky
@@ -544,8 +552,8 @@ ${ctx}`
         // ── SMART AI LOOK ── render the recipe onto a canonical scene, then run the
         // SAME v8 content-aware engine as a real reference photo (cluster matching +
         // split-tone cast + Smart Tone + skin) so the prompt look is just as canggih.
-        const synthRef = buildSynthRef(aiNodes)
         const normFoot = convertImageData(footImg, logProfile, logGain)
+        const synthRef = buildSynthRef(aiNodes, normFoot)
         const m = computeSmartMatch(normFoot, synthRef)
         const zp:Record<string,number>={}
         for(let i=0;i<24;i++){zp['zh'+i]=m.zoneH[i];zp['zs'+i]=m.zoneS[i];zp['zl'+i]=m.zoneL[i]}
