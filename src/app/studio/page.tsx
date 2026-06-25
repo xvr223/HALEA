@@ -725,6 +725,50 @@ ${ctx}`
     toast('✓ Downloaded: '+filename)
   }
 
+  // Download the EDITED PHOTO — render the look onto the original full-res image
+  // (same pipeline as the live preview: log decode → grade → skin guard) and save
+  // as a high-quality JPEG. Lets non-video users walk away with a finished photo.
+  const [photoExporting, setPhotoExporting] = useState(false)
+  const downloadPhoto = async () => {
+    if (!footSrc) { toast('Upload foto dulu', 'err'); return }
+    if (nodes.length===0) { toast('Match Colors / Prompt AI dulu — belum ada look', 'warn'); return }
+    if (!useCredit(matchCost)) { toast(`Kredit habis — export foto butuh ${matchCost} kredit. Beli di Shop 🛍`, 'err'); return }
+    setPhotoExporting(true)
+    try {
+      const img = new Image()
+      img.src = footSrc
+      await new Promise<void>((res, rej) => { img.onload = () => res(); img.onerror = () => rej(new Error('load')) })
+      // full resolution, capped so giant photos don't exhaust browser memory
+      const cap = 4096, scale = Math.min(1, cap / Math.max(img.width, img.height))
+      const w = Math.round(img.width*scale), h = Math.round(img.height*scale)
+      const c = document.createElement('canvas'); c.width=w; c.height=h
+      const ctx = c.getContext('2d')!
+      ctx.drawImage(img, 0, 0, w, h)
+      const id = ctx.getImageData(0, 0, w, h), d = id.data
+      for (let i=0;i<d.length;i+=4){
+        const ro=d[i]/255, go=d[i+1]/255, bo=d[i+2]/255
+        const [br,bg,bb]=logToDisplay(logProfile, logGain, ro, go, bo)
+        const [nr,ng,nb]=applyNodes(br, bg, bb, nodes)
+        const blend = skinGuard && isSkinTone(br, bg, bb) ? 0.25 : 1.0
+        d[i]=Math.round(clamp(br+(nr-br)*blend)*255)
+        d[i+1]=Math.round(clamp(bg+(ng-bg)*blend)*255)
+        d[i+2]=Math.round(clamp(bb+(nb-bb)*blend)*255)
+      }
+      ctx.putImageData(id, 0, 0)
+      const blob: Blob|null = await new Promise(r=>c.toBlob(r, 'image/jpeg', 0.95))
+      if (!blob) throw new Error('encode')
+      const u=URL.createObjectURL(blob), a=document.createElement('a')
+      a.href=u; a.download=(lutName||'HALEA')+'_graded.jpg'; a.click()
+      setTimeout(()=>URL.revokeObjectURL(u), 2000)
+      try { localStorage.setItem('halea_m_photo', '1') } catch {}
+      toast(`✓ Foto ter-edit terdownload (${w}×${h}) — full quality 📸`)
+    } catch {
+      if (!isAdmin) addCredits(matchCost)   // refund on failure
+      toast('Gagal export foto — coba lagi', 'err')
+    }
+    setPhotoExporting(false)
+  }
+
   // Precision Grade — ultra-fidelity 65³ grid, baked fresh so it includes
   // log decode + fine-tune + the full v5 transport
   const [dvBaking, setDvBaking] = useState(false)
@@ -1151,6 +1195,16 @@ ${seq(ptsB)}
               className="w-full bg-s2 border border-b1 text-txt px-3 py-2 rounded-lg text-sm outline-none focus:border-accent transition-colors"/>
           </div>
 
+          {/* Download the EDITED PHOTO — primary deliverable for photo/IG users */}
+          <button onClick={downloadPhoto} disabled={!footSrc||!nodes.length||photoExporting}
+            className="w-full py-3 rounded-xl text-xs font-bold border border-accent/50 bg-gradient-to-r from-accent/20 to-accent/5 text-accent hover:from-accent/30 transition-all disabled:opacity-30 disabled:cursor-not-allowed flex items-center justify-center gap-1.5">
+            {photoExporting
+              ? <><span className="w-3.5 h-3.5 border-2 border-accent/30 border-t-accent rounded-full animate-spin"/>Export foto...</>
+              : <>📸 Download Foto <span className="text-[9px] opacity-70">hasil edit · full-res</span>{!isAdmin&&<span className="text-[8px] bg-accent/20 px-1.5 py-0.5 rounded-full">{matchCost} kredit</span>}</>}
+          </button>
+
+          {/* LUT export (untuk video editor) */}
+          <p className="text-[9px] font-black tracking-widest uppercase text-t3 -mb-1">LUT untuk video editor</p>
           {/* Export grid 2x2 */}
           <div className="grid grid-cols-2 gap-2">
             {(['cube','3dl'] as const).map(fmt=>(
@@ -1556,6 +1610,14 @@ ${seq(ptsB)}
               <input value={lutName} onChange={e=>setLutName(e.target.value)}
                 className="w-full bg-s3 border border-b2 text-txt px-4 py-3 rounded-xl text-sm outline-none focus:border-accent transition-colors"/>
             </div>
+
+            {/* Download edited PHOTO — available as soon as there's a look (no bake needed) */}
+            {nodes.length>0&&(
+              <button onClick={downloadPhoto} disabled={!footSrc||photoExporting}
+                className="w-full py-4 rounded-2xl text-sm font-bold border border-accent/50 bg-gradient-to-r from-accent/20 to-accent/5 text-accent active:scale-[0.97] transition-all flex items-center justify-center gap-2 disabled:opacity-40">
+                {photoExporting ? <><span className="w-4 h-4 border-2 border-accent/30 border-t-accent rounded-full animate-spin"/>Export foto...</> : <>📸 Download Foto — hasil edit{!isAdmin&&<span className="text-[10px] bg-accent/20 px-2 py-0.5 rounded-full">{matchCost} kredit</span>}</>}
+              </button>
+            )}
 
             {!lut ? (
               <div className="bg-s2 border border-dashed border-b2 rounded-2xl p-10 text-center">
