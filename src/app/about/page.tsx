@@ -172,15 +172,15 @@ export default function AboutPage() {
             {[
               {
                 icon: <Cpu size={16}/>, title: 'Content-Aware Cluster Correspondence',
-                desc: 'Engine memecah footage & referensi jadi cluster warna (k-means), mencocokkan "langit ke langit, awan ke awan" lewat luma + chroma + hue, lalu di-bake jadi 3D LUT presisi tinggi. Region netral tetap netral, kulit terjaga — bukan transport global yang merusak konten.',
+                desc: 'Engine memecah footage & referensi jadi cluster warna (k-means), lalu mencocokkan per PERAN tonal — "langit cerah ke langit cerah, awan ke awan" lewat luma + chroma. Region netral dikunci tetap netral, region jenuh dijaga punch-nya. Bukan transport global yang merusak konten.',
               },
               {
-                icon: <Sparkles size={16}/>, title: 'Zone Matrix 24 Sel',
-                desc: '8 kelompok warna × 3 zona kecerahan dikoreksi terpisah. "Shadow teal, highlight warm" dihitung otomatis — cara kerja colorist profesional, tanpa sentuh satu slider pun.',
+                icon: <Sparkles size={16}/>, title: 'Split-Tone Cast — DNA Look',
+                desc: 'Bagian yang bikin look "nempel": tint film yang mewarnai shadow ke satu arah & highlight ke arah lain — termasuk di abu-abu & netral. Diukur dari pixel netral referensi, jadi yang ketangkep itu grade-nya, bukan warna memori. Di atasnya, Smart Tone bangun kurva filmic (toe/shoulder) buat blacks & highlight.',
               },
               {
                 icon: <ShieldCheck size={16}/>, title: 'Skin Intelligence',
-                desc: 'Kulit dideteksi di kedua gambar. Ada manusia di referensi? Skin di-match langsung. Tidak ada? Skin diproteksi otomatis. Wajah tidak pernah dikorbankan demi look.',
+                desc: 'Kulit dideteksi di kedua gambar. Bukan dibekukan mentah — kulit IKUT look (menghangat/mendingin senada grade), tapi hue-nya di-soft-cap biar gak pernah jadi hijau/teal dan chroma dijaga soft, gak norak. Ada skin di referensi? Di-match langsung ke sana.',
               },
               {
                 icon: <Zap size={16}/>, title: 'Self-Correcting + Jujur',
@@ -201,7 +201,7 @@ export default function AboutPage() {
           <div className="mt-8 bg-s2 border border-b1 rounded-2xl p-5 overflow-x-auto">
             <p className="text-[9px] font-black tracking-widest uppercase text-t3 mb-3 text-center">Pipeline sekali klik</p>
             <div className="flex items-center justify-center gap-2 min-w-max mx-auto text-[10px] font-bold">
-              {['Log Decode', 'Distribution Transfer', 'Zone Matrix', 'Skin Layer', 'Dense 3D LUT', 'Guards', 'Export'].map((step, i, arr) => (
+              {['Log Decode', 'Cluster Match', 'Split-Tone Cast', 'Smart Tone', 'Skin Layer', 'Dense 3D LUT', 'Guards', 'Export'].map((step, i, arr) => (
                 <span key={step} className="flex items-center gap-2">
                   <span className={`px-3 py-1.5 rounded-full border ${i === arr.length - 1 ? 'bg-accent text-white border-accent' : 'bg-s3 border-b2 text-t2'}`}>{step}</span>
                   {i < arr.length - 1 && <span className="text-t3">→</span>}
@@ -232,16 +232,16 @@ export default function AboutPage() {
         </div>
       </section>
 
-      {/* ── PERJALANAN ENGINE V1 → V5 ────────────────────────────────────── */}
+      {/* ── PERJALANAN ENGINE V1 → V8 ────────────────────────────────────── */}
       <section className="border-t border-b1">
         <div className="max-w-3xl mx-auto px-6 py-16 md:py-24">
           <div className="text-center mb-12">
             <p className="text-[9px] font-black tracking-[0.3em] uppercase text-accent mb-3">Bukan dibangun dalam semalam</p>
             <h2 className="font-fraunces text-3xl md:text-4xl font-semibold mb-4">
-              Perjalanan <span className="italic text-accent">Engine</span> — V1 ke V5
+              Perjalanan <span className="italic text-accent">Engine</span> — V1 ke V8
             </h2>
             <p className="text-t2 text-sm max-w-xl mx-auto leading-relaxed">
-              Lima generasi, ratusan jam riset & ngoprek. Tiap versi lahir dari satu masalah nyata yang
+              Delapan generasi, ratusan jam riset & ngoprek. Tiap versi lahir dari satu masalah nyata yang
               bikin hasil grading belum &ldquo;nempel&rdquo;. Ini catatan perjalanannya.
             </p>
           </div>
@@ -295,10 +295,10 @@ export default function AboutPage() {
                   flaw: 'Tone & warna sudah presisi — tapi transport warnanya masih "global": region netral (awan, kabut) bisa ketarik warna dominan referensi → awan putih bisa berubah kebiruan.',
                 },
                 {
-                  v: 'V8', tag: 'Content-Aware — Cluster Correspondence', cur: true,
-                  problem: 'Transport global tidak sadar KONTEN. Kalau referensi langitnya biru, awan putih di footage ikut ketarik jadi biru — padahal awan harusnya tetap netral. Engine perlu mencocokkan "langit ke langit, awan ke awan".',
-                  fix: 'k-means memecah footage & referensi jadi cluster warna, lalu mencocokkan cluster lewat biaya luma + chroma + hue (Chang et al. 2015, palette-based recoloring). Region netral dikunci tetap netral, region jenuh dijaga punch-nya, lalu di-warp mulus pakai RBF — look nempel TANPA merusak konten.',
-                  flaw: 'Hasil: awan tetap awan, langit dapat warna referensi, kulit terjaga — content-aware sejati. Inilah engine yang dipakai HALEA sekarang.',
+                  v: 'V8', tag: 'Content-Aware — Cluster + Split-Tone', cur: true,
+                  problem: 'Transport global tidak sadar KONTEN. Referensi langit biru → awan putih ikut ketarik biru. Dan look yang sebenarnya hidup di abu-abu (cast film stock) hilang karena cuma region jenuh yang dikoreksi.',
+                  fix: 'Tiga pilar. (1) Cluster correspondence: k-means cocokkan region per PERAN tonal — luma + chroma, TANPA penalti hue (Chang et al. 2015) — jadi region bebas mengadopsi warna referensi (langit biru → teal), netral dikunci. (2) Split-tone cast: tint shadow/highlight referensi diukur dari pixel netralnya & dikenakan ke seluruh frame termasuk abu — ini "DNA" look-nya. (3) Skin ikut look tapi soft-capped biar tetap natural. Semua jalur Smart Tone + dense LUT.',
+                  flaw: 'Hasil: awan tetap awan, langit dapat teal, abu-abu kebawa cast vintage, kulit senada tapi terjaga. Engine yang sama kini juga menyalakan AI Look (prompt → grade), bukan cuma referensi foto. Inilah HALEA sekarang.',
                 },
               ].map((e) => (
                 <div key={e.v} className="relative sm:pl-14">
@@ -343,7 +343,7 @@ export default function AboutPage() {
         </div>
         <div className="grid grid-cols-2 md:grid-cols-3 gap-3">
           {[
-            ['🎬', 'Studio', 'Match referensi → fine-tune → bake LUT (.cube, .3dl, .xmp, CapCut)', '/studio'],
+            ['🎬', 'Studio', 'Match referensi / prompt AI → fine-tune → bake LUT (.cube, .3dl, .xmp, CapCut)', '/studio'],
             ['⚡', 'Shot Matcher', 'Samakan warna multicam — tiap klip dapat LUT-nya sendiri', '/matcher'],
             ['🧬', 'HALEA Code', 'Satu look = satu baris teks. Share di caption, paste, langsung kepake', '/studio'],
             ['🃏', 'Share Card', 'Before/after siap post — 4 format sosmed', '/share'],
