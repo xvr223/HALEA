@@ -11,14 +11,15 @@ const TYPE_LABELS: Record<string, string> = { lut: 'LUT', preset: 'Preset', pack
 const FILTERS = ['Semua', 'LUT', 'Preset', 'Pack', 'AI Credits', 'Gratis']
 
 export default function ShopPage() {
-  const { products, seedDemo } = useShopStore()
+  const { products, sync } = useShopStore()
   const { user, credits, redeemCode } = useAuthStore()
   const { packages, creditPrice } = useSettingsStore()
   const router = useRouter()
   const [filter, setFilter] = useState('Semua')
   const [selected, setSelected] = useState<Product | null>(null)
+  const [downloading, setDownloading] = useState(false)
 
-  useEffect(() => { seedDemo() }, [seedDemo])
+  useEffect(() => { sync() }, [sync])
 
   const filtered = products.filter(p => {
     if (filter === 'Semua') return true
@@ -39,10 +40,21 @@ export default function ShopPage() {
     else toast('Kode tidak valid', 'err')
   }
 
-  const handleDownload = (p: Product) => {
-    if (!p.fileData) { toast('File tidak tersedia', 'err'); return }
+  const handleDownload = async (p: Product) => {
+    let data = p.fileData
+    // server-stored file (DB shop) — fetched on demand, not in the listing payload
+    if (!data && p.hasFile) {
+      setDownloading(true)
+      try {
+        const r = await fetch('/api/products?file=' + encodeURIComponent(p.id))
+        const j = await r.json()
+        if (r.ok) data = j.fileData
+      } catch {}
+      setDownloading(false)
+    }
+    if (!data) { toast('File tidak tersedia', 'err'); return }
     const a = document.createElement('a')
-    a.href = p.fileData; a.download = p.name.replace(/\s+/g, '_') + (p.fileExt || '.cube'); a.click()
+    a.href = data; a.download = p.name.replace(/\s+/g, '_') + (p.fileExt || '.cube'); a.click()
     toast('✓ Downloaded: ' + p.name)
     setSelected(null)
   }
@@ -189,7 +201,7 @@ export default function ShopPage() {
                   </div>
                 </div>
               ) : selected.price === 0 ? (
-                <Btn variant="accent" size="lg" className="w-full" onClick={() => handleDownload(selected)}>
+                <Btn variant="accent" size="lg" className="w-full" onClick={() => handleDownload(selected)} loading={downloading}>
                   ⬇ Unduh Gratis
                 </Btn>
               ) : (

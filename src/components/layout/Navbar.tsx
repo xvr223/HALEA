@@ -4,11 +4,29 @@ import { usePathname } from 'next/navigation'
 import { useState } from 'react'
 import { Menu, X, Instagram } from 'lucide-react'
 import { useAuthStore } from '@/store/auth'
+import { useI18n, useT } from '@/lib/i18n'
 import clsx from 'clsx'
+
+// compact ID · EN switch — manual choice persists & overrides auto-detection
+function LangToggle({ className }: { className?: string }) {
+  const { locale, setLocale } = useI18n()
+  return (
+    <div className={clsx('flex items-center rounded-full border border-b1 bg-s2 p-0.5', className)}>
+      {(['id', 'en'] as const).map(l => (
+        <button key={l} onClick={() => setLocale(l)}
+          className={clsx('px-2 py-1 rounded-full text-[9px] font-black uppercase tracking-wider transition-colors',
+            locale === l ? 'bg-accent text-white' : 'text-t3 hover:text-txt')}>
+          {l}
+        </button>
+      ))}
+    </div>
+  )
+}
 
 const NAV = [
   { href: '/',        label: 'Beranda' },
   { href: '/studio',  label: 'Studio' },
+  { href: '/looks',   label: 'Looks' },
   { href: '/matcher', label: 'Matcher' },
   { href: '/shop',    label: 'Shop' },
   { href: '/ai',      label: 'AI' },
@@ -23,6 +41,7 @@ export function Navbar() {
   const [open, setOpen] = useState(false)
   const { user, credits } = useAuthStore()
   const isAdmin = user?.role === 'admin'
+  const t = useT()
 
   return (
     <header className="sticky top-0 z-50 glass border-b border-b1">
@@ -48,7 +67,7 @@ export function Navbar() {
                   ? 'text-accent bg-accent/10'
                   : 'text-t2 hover:text-txt hover:bg-s3'
               )}>
-              {n.label}
+              {t(n.label)}
             </Link>
           ))}
           {isAdmin && (
@@ -65,6 +84,7 @@ export function Navbar() {
 
         {/* Right side */}
         <div className="hidden md:flex items-center gap-3">
+          <LangToggle />
           <a href="https://instagram.com/haleastudio" target="_blank"
             className="flex items-center gap-1.5 text-t3 hover:text-accent text-xs font-mono transition-colors">
             <Instagram size={13} />
@@ -75,7 +95,7 @@ export function Navbar() {
             <div className="flex items-center gap-2">
               {!isAdmin && (
                 <Link href="/shop" className="flex items-center gap-1.5 px-2.5 py-1 rounded-full bg-ok/10 border border-ok/20 text-ok text-xs font-bold">
-                  🤖 {credits} kredit
+                  🤖 {credits} {t('kredit')}
                 </Link>
               )}
               <Link href={isAdmin ? '/admin' : '/profile'}
@@ -89,7 +109,7 @@ export function Navbar() {
           ) : (
             <Link href="/login"
               className="px-3 py-1.5 rounded-md bg-accent text-white text-xs font-bold tracking-wide hover:bg-orange-400 transition-colors">
-              Masuk
+              {t('Masuk')}
             </Link>
           )}
         </div>
@@ -108,20 +128,21 @@ export function Navbar() {
               className={clsx('px-3 py-2.5 rounded-md text-sm font-bold tracking-wide uppercase',
                 path === n.href ? 'text-accent bg-accent/10' : 'text-t2'
               )}>
-              {n.label}
+              {t(n.label)}
             </Link>
           ))}
+          <LangToggle className="self-start ml-3 my-1" />
           {isAdmin && <Link href="/admin" onClick={() => setOpen(false)} className="px-3 py-2.5 text-sm font-bold text-a2">Admin</Link>}
           {user && !isAdmin ? (
             <Link href="/profile" onClick={() => setOpen(false)}
               className="px-3 py-2.5 rounded-md text-sm font-bold tracking-wide uppercase text-t2 flex items-center gap-2">
               <span className="w-5 h-5 rounded-full bg-accent text-white flex items-center justify-center text-[10px] font-black">{user.name[0]}</span>
-              Profil · 🤖 {credits}
+              {t('Profil')} · 🤖 {credits}
             </Link>
           ) : !user && (
             <Link href="/login" onClick={() => setOpen(false)}
               className="px-3 py-2.5 rounded-md text-sm font-bold tracking-wide uppercase text-accent">
-              Masuk / Daftar
+              {t('Masuk / Daftar')}
             </Link>
           )}
         </div>

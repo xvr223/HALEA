@@ -1,11 +1,14 @@
 // HALEA Code — share a grade as a short text code. No server, no database:
 // the code IS the look.
 //
-// v3 layout: [ver=3][flags][name? len+ascii≤12]
+// v4 layout: [ver=4][flags][name? len+ascii≤12]
 //   [match? 9×i16 matrix + 3×i16 offset + 16×u8 curve
 //          + 24×i8 hue-band residuals + 5×i8 skin layer + u8 amount = 70B]
-//   [primary? 6×i8, omitted when all-zero][look? 2B][halation? 1B][checksum]
+//   [primary? 6×i8, omitted when all-zero][look? 2B][halation? 1B]
+//   [split? 5B hue/2°+sat+balance][hsl? 24×i8 8-band h/s/l][checksum]
 // Typical sizes: basic look ~22 chars, full Smart Match ~105 chars.
+// v4 adds split-tone & HSL blocks so AI/parametric looks keep their full
+// character when shared (Look Library / captions).
 //
 // Compression tricks (lossless where it matters):
 // - means folded into one offset vector: T(x−μf)+μr ≡ Tx+o with o = μr − T·μf
@@ -35,10 +38,17 @@ export function encodeGrade(nodes: CodeNode[], name = ''): string {
   const prim  = nodes.find(n => n.type === 'primary'  && n.enabled)
   const look  = nodes.find(n => n.type === 'look'     && n.enabled)
   const hal   = nodes.find(n => n.type === 'halation' && n.enabled)
+  const split = nodes.find(n => n.type === 'split'    && n.enabled)
+  const hsl   = nodes.find(n => n.type === 'hsl'      && n.enabled)
   const cleanName = name.replace(/[^\x20-\x7E]/g, '').trim().slice(0, 12)
 
   // skip the trim block entirely when it's all zeros (common case)
   const primDirty = !!prim && PRIM_KEYS.some(k => Math.abs((prim.params[k] as number) || 0) > 0.004)
+  // hsl block only when any band actually moved
+  const hslDirty = !!hsl && Array.from({ length: 8 }, (_, i) => i).some(i =>
+    Math.abs((hsl.params['h' + i] as number) || 0) > 0.5 ||
+    Math.abs((hsl.params['s' + i] as number) || 0) > 0.01 ||
+    Math.abs((hsl.params['l' + i] as number) || 0) > 0.01)
 
   let flags = 0
   if (match)     flags |= 1
@@ -46,7 +56,9 @@ export function encodeGrade(nodes: CodeNode[], name = ''): string {
   if (look)      flags |= 4
   if (hal)       flags |= 8
   if (cleanName) flags |= 16
-  u8(3); u8(flags)
+  if (split)     flags |= 32
+  if (hslDirty)  flags |= 64
+  u8(4); u8(flags)
 
   if (cleanName) {
     u8(cleanName.length)
@@ -91,6 +103,21 @@ export function encodeGrade(nodes: CodeNode[], name = ''): string {
   if (hal) {
     u8(Math.round(cl(hal.params.intensity as number, 0, 1.27) * 200))   // threshold fixed at 0.65
   }
+  if (split) {
+    const p = split.params
+    u8(Math.round(cl((p.shHue as number) || 0, 0, 360) / 2))            // hue in 2° steps
+    u8(Math.round(cl((p.shSat as number) || 0, 0, 1.27) * 200))
+    u8(Math.round(cl((p.hiHue as number) || 0, 0, 360) / 2))
+    u8(Math.round(cl((p.hiSat as number) || 0, 0, 1.27) * 200))
+    u8(Math.round(cl((p.balance as number) || 0, -0.635, 0.635) * 100) & 0xFF)   // i8
+  }
+  if (hslDirty && hsl) {
+    for (let i = 0; i < 8; i++) {
+      u8(Math.round(cl((hsl.params['h' + i] as number) || 0, -40, 40)) & 0xFF)          // i8 deg
+      u8(Math.round(cl((hsl.params['s' + i] as number) || 0, -0.8, 0.6) * 100) & 0xFF)  // i8
+      u8(Math.round(cl((hsl.params['l' + i] as number) || 0, -0.25, 0.25) * 100) & 0xFF)
+    }
+  }
 
   let sum = 0
   for (const b of bytes) sum = (sum + b) & 0xFF
@@ -123,7 +150,7 @@ export function decodeGrade(text: string): { nodes: CodeNode[]; name: string } |
     const i8  = () => { let v = u8(); if (v > 127) v -= 256; return v }
 
     const ver = u8()
-    if (ver < 1 || ver > 3) return null
+    if (ver < 1 || ver > 4) return null
     const flags = u8()
 
     let name = ''
@@ -189,6 +216,18 @@ export function decodeGrade(text: string): { nodes: CodeNode[]; name: string } |
     if (flags & 8) {
       const threshold = ver === 1 ? u8() / 100 : 0.65
       nodes.push({ type: 'halation', enabled: true, params: { threshold, intensity: u8() / 200 } })
+    }
+    if (ver >= 4 && (flags & 32)) {
+      nodes.push({ type: 'split', enabled: true, params: {
+        shHue: u8() * 2, shSat: u8() / 200, hiHue: u8() * 2, hiSat: u8() / 200, balance: i8() / 100,
+      } })
+    }
+    if (ver >= 4 && (flags & 64)) {
+      const params: Record<string, number | string> = {}
+      for (let i = 0; i < 8; i++) {
+        params['h' + i] = i8(); params['s' + i] = i8() / 100; params['l' + i] = i8() / 100
+      }
+      nodes.push({ type: 'hsl', enabled: true, params })
     }
     if (!nodes.length) return null
     return { nodes, name }

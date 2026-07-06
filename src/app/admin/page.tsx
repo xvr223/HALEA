@@ -5,7 +5,7 @@ import { useAuthStore, genCode } from '@/store/auth'
 import { useShopStore, Product } from '@/store/shop'
 import { useSettingsStore, rp } from '@/store/settings'
 import { Btn, Input, toast, DropZone } from '@/components/ui'
-import { Trash2, LogOut, Plus, Users, Settings2, Rocket, Eye, LayoutDashboard, Package, Mail } from 'lucide-react'
+import { Trash2, LogOut, Plus, Users, Settings2, Rocket, Eye, LayoutDashboard, Package, Mail, Pencil } from 'lucide-react'
 import { GLOBAL_LAUNCHED, PREVIEW_KEY, fetchLaunched, setLaunched, fetchWaitlist, getLocalWaitlist, WaitEntry } from '@/lib/launch'
 
 type Tab = 'overview' | 'launch' | 'shop' | 'pricing' | 'users' | 'waitlist'
@@ -20,7 +20,7 @@ const TABS: { id: Tab; label: string; Icon: typeof Rocket }[] = [
 
 export default function AdminPage() {
   const { user, logout, users, adminSetCredits, adminDeleteUser } = useAuthStore()
-  const { products, addProduct, removeProduct, seedDemo } = useShopStore()
+  const { products, addProduct, removeProduct, updateProduct, sync: syncShop, configured: shopDb } = useShopStore()
   const settings = useSettingsStore()
   const router = useRouter()
 
@@ -50,7 +50,7 @@ export default function AdminPage() {
   }, [])
 
   useEffect(() => { if (!user || user.role !== 'admin') router.push('/login') }, [user, router])
-  useEffect(() => { seedDemo() }, [seedDemo])
+  useEffect(() => { syncShop() }, [syncShop])
   if (!user || user.role !== 'admin') return null
 
   const doLaunch = async (next: boolean) => {
@@ -75,13 +75,59 @@ export default function AdminPage() {
     const a = document.createElement('a'); a.href = URL.createObjectURL(new Blob([csv], { type: 'text/csv' })); a.download = 'halea_waitlist.csv'; a.click()
   }
 
-  const handleThumb = (f: File) => { const r = new FileReader(); r.onload = e => setThumb(e.target?.result as string); r.readAsDataURL(f) }
-  const handleFile = (f: File) => { setFileName(f.name); setFileExt('.' + f.name.split('.').pop()); const r = new FileReader(); r.onload = e => setFileData(e.target?.result as string); r.readAsDataURL(f) }
-  const submit = () => {
+  // thumbnails are downscaled (max 640px, JPEG) so photos never blow the DB request cap
+  const handleThumb = (f: File) => {
+    const img = new Image(); const url = URL.createObjectURL(f)
+    img.onload = () => {
+      const scale = Math.min(1, 640 / Math.max(img.width, img.height))
+      const c = document.createElement('canvas')
+      c.width = Math.round(img.width * scale); c.height = Math.round(img.height * scale)
+      c.getContext('2d')!.drawImage(img, 0, 0, c.width, c.height)
+      setThumb(c.toDataURL('image/jpeg', 0.82)); URL.revokeObjectURL(url)
+    }
+    img.src = url
+  }
+  const handleFile = (f: File) => {
+    const r = new FileReader()
+    r.onload = e => {
+      const data = e.target?.result as string
+      if (shopDb && data.length > 950_000) { toast('File terlalu besar untuk DB (maks ~700KB) — pakai LUT 17³/preset, atau kirim via DM', 'err'); return }
+      setFileName(f.name); setFileExt('.' + f.name.split('.').pop()); setFileData(data)
+    }
+    r.readAsDataURL(f)
+  }
+
+  // ── Produk: tambah / edit (dengan tombol Simpan) ──
+  const [editId, setEditId] = useState<string | null>(null)
+  const [saving, setSaving] = useState(false)
+  const resetForm = () => {
+    setForm({ name: '', type: 'lut', desc: '', price: 0, credits: 10 })
+    setThumb(undefined); setFileData(undefined); setFileName(''); setEditId(null)
+  }
+  const startEdit = (p: Product) => {
+    setEditId(p.id)
+    setForm({ name: p.name, type: p.type, desc: p.desc, price: p.price, credits: p.credits ?? 10 })
+    setThumb(p.thumb); setFileData(undefined); setFileName(''); setFileExt(p.fileExt || '.cube')
+    setTab('shop')
+  }
+  const submit = async () => {
     if (!form.name.trim()) { toast('Isi nama produk', 'err'); return }
-    addProduct({ ...form, thumb, fileData, fileExt })
-    setForm({ name: '', type: 'lut', desc: '', price: 0, credits: 10 }); setThumb(undefined); setFileData(undefined); setFileName('')
-    toast('✓ Produk dipublish!')
+    setSaving(true)
+    const payload = { ...form, thumb, ...(fileData ? { fileData, fileExt } : {}) }
+    const err = editId
+      ? await updateProduct(editId, payload)
+      : await addProduct({ ...payload, fileExt: fileData ? fileExt : undefined })
+    setSaving(false)
+    if (err) { toast(err, 'err'); return }
+    toast(editId ? '✓ Perubahan disimpan!' : '✓ Produk dipublish!')
+    resetForm()
+  }
+  const doDelete = async (p: Product) => {
+    if (!confirm(`Hapus "${p.name}" dari shop?`)) return
+    const err = await removeProduct(p.id)
+    if (err) { toast(err, 'err'); return }
+    if (editId === p.id) resetForm()
+    toast('✓ Dihapus')
   }
   const handleGenCode = () => { const code = genCode(creditAmt); setGeneratedCode(code); navigator.clipboard?.writeText(code).then(() => toast('✓ Kode disalin!')) }
 
@@ -203,8 +249,15 @@ export default function AdminPage() {
       {/* ════ SHOP / PRODUK ════ */}
       {tab === 'shop' && (
         <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
-          <div className="bg-s2 border border-b1 rounded-2xl p-6">
-            <h2 className="font-bold text-lg mb-5 flex items-center gap-2"><Plus size={18} className="text-accent" /> Upload Produk</h2>
+          <div className={`bg-s2 border rounded-2xl p-6 ${editId ? 'border-a2/50' : 'border-b1'}`}>
+            <div className="flex items-center justify-between mb-5">
+              <h2 className="font-bold text-lg flex items-center gap-2">
+                {editId ? <><Pencil size={16} className="text-a2" /> Edit Produk</> : <><Plus size={18} className="text-accent" /> Upload Produk</>}
+              </h2>
+              <span className={`text-[9px] font-black tracking-widest uppercase px-2 py-1 rounded-full ${shopDb ? 'bg-ok/10 text-ok border border-ok/30' : 'bg-warn/10 text-warn border border-warn/30'}`}>
+                {shopDb ? '☁ DB — semua user' : '📍 Lokal — device ini aja'}
+              </span>
+            </div>
             <div className="flex flex-col gap-3">
               <div><label className="text-[9px] font-black tracking-widest uppercase text-t3 block mb-1.5">Nama</label>
                 <Input value={form.name} onChange={e => setForm(f => ({ ...f, name: e.target.value }))} placeholder="Jakarta Nights LUT Pack" /></div>
@@ -225,7 +278,18 @@ export default function AdminPage() {
                 <DropZone label={fileName || 'File LUT'} sub=".cube · .3dl · .zip" icon="📁" accept=".cube,.3dl,.lut,.zip" onFile={handleFile} />
               </div>
               {thumb && <img src={thumb} alt="" className="w-full h-24 object-cover rounded-lg" />}
-              <Btn variant="accent" size="lg" className="w-full" onClick={submit}>Publish ke Shop</Btn>
+              {editId && fileName && <p className="text-[10px] text-a2">File baru: {fileName} (menggantikan file lama)</p>}
+              <div className="flex gap-2">
+                <Btn variant="accent" size="lg" className="flex-1" onClick={submit} loading={saving}>
+                  {editId ? '💾 Simpan Perubahan' : 'Publish ke Shop'}
+                </Btn>
+                {editId && (
+                  <button onClick={resetForm}
+                    className="px-4 rounded-xl border border-b2 text-t2 text-xs font-bold hover:border-b3 transition-colors">
+                    Batal
+                  </button>
+                )}
+              </div>
             </div>
           </div>
           <div className="flex flex-col gap-6">
@@ -249,10 +313,11 @@ export default function AdminPage() {
               <h2 className="font-bold text-lg mb-4">📦 Produk ({products.length})</h2>
               <div className="flex flex-col gap-2 max-h-80 overflow-y-auto pr-1">
                 {products.length === 0 ? <p className="text-t3 text-xs text-center py-8">Belum ada produk</p> : products.map(p => (
-                  <div key={p.id} className="flex items-center gap-3 bg-s3 rounded-xl p-3">
+                  <div key={p.id} className={`flex items-center gap-3 rounded-xl p-3 ${editId === p.id ? 'bg-a2/10 border border-a2/40' : 'bg-s3'}`}>
                     <span className="text-lg">{p.type === 'lut' ? '🎞' : p.type === 'credits' ? '🤖' : p.type === 'pack' ? '📦' : '✦'}</span>
-                    <div className="flex-1 min-w-0"><p className="font-bold text-sm truncate">{p.name}</p><p className="text-t3 text-[10px]">{p.type} · {p.price === 0 ? 'Free' : '$' + p.price}</p></div>
-                    <button onClick={() => { removeProduct(p.id); toast('Dihapus') }} className="text-t3 hover:text-err transition-colors p-1"><Trash2 size={14} /></button>
+                    <div className="flex-1 min-w-0"><p className="font-bold text-sm truncate">{p.name}</p><p className="text-t3 text-[10px]">{p.type} · {p.price === 0 ? 'Free' : '$' + p.price}{p.hasFile || p.fileData ? ' · 📁' : ''}</p></div>
+                    <button onClick={() => startEdit(p)} className="text-t3 hover:text-a2 transition-colors p-1" title="Edit"><Pencil size={14} /></button>
+                    <button onClick={() => doDelete(p)} className="text-t3 hover:text-err transition-colors p-1" title="Hapus"><Trash2 size={14} /></button>
                   </div>
                 ))}
               </div>

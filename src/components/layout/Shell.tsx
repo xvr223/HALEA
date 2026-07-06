@@ -5,6 +5,7 @@ import { Navbar } from './Navbar'
 import { Waitlist } from '../Waitlist'
 import { useAuthStore } from '@/store/auth'
 import { GLOBAL_LAUNCHED, PREVIEW_KEY, fetchLaunched, cachedLive, setCachedLive } from '@/lib/launch'
+import { detectLocale } from '@/lib/i18n'
 
 // Pre-launch gate: until launched, every visitor sees only the waitlist landing.
 // Global launch state comes from the DB (/api/launch); admin (logged in) and the
@@ -18,6 +19,7 @@ export function Shell({ children }: { children: React.ReactNode }) {
 
   useEffect(() => {
     setMounted(true)
+    detectLocale()   // EN for foreign browsers, ID for Indonesian — manual toggle wins
     try { setPreview(localStorage.getItem(PREVIEW_KEY) === 'live') } catch {}
     setDbLive(cachedLive())                                   // instant from cache (no flash)
     fetchLaunched().then(v => { setDbLive(v); setCachedLive(v) })   // authoritative from DB

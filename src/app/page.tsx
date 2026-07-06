@@ -1,4 +1,6 @@
+'use client'
 import Link from 'next/link'
+import { useT } from '@/lib/i18n'
 
 const FEATURES = [
   { icon: '🎞', title: 'LUT Studio', desc: 'Pipeline grading berbasis node yang menghasilkan file .cube — Primary, Curves, HSL, Halation.', href: '/studio', badge: 'PRO', bc: 'text-accent' },
@@ -12,6 +14,7 @@ const FEATURES = [
 const COMPAT = ['Premiere Pro', 'DaVinci Resolve', 'After Effects', 'Final Cut Pro', 'Lightroom', 'CapCut Pro']
 
 export default function Home() {
+  const t = useT()
   return (
     <div className="flex flex-col">
 
@@ -34,20 +37,20 @@ export default function Home() {
             HAL<span className="italic text-accent">E</span>A
           </h1>
           <p className="text-t2 text-lg sm:text-xl font-mono tracking-widest uppercase mb-3">
-            Warna Sinematik, Dirancang dengan Presisi
+            {t('Warna Sinematik, Dirancang dengan Presisi')}
           </p>
           <p className="text-t2 max-w-lg mx-auto text-sm leading-relaxed mb-10">
-            Tools color grading profesional untuk video editor Indonesia. Generator LUT berbasis AI, Halation Studio, dan toko preset premium — semua dalam satu platform.
+            {t('Tools color grading profesional untuk video editor Indonesia. Generator LUT berbasis AI, Halation Studio, dan toko preset premium — semua dalam satu platform.')}
           </p>
 
           <div className="flex flex-wrap gap-3 justify-center mb-12">
             <Link href="/studio"
               className="px-8 py-3.5 bg-accent text-white text-sm font-bold tracking-wide rounded-xl hover:bg-orange-400 hover:-translate-y-0.5 transition-all shadow-lg shadow-accent/25">
-              Buka Studio
+              {t('Buka Studio')}
             </Link>
             <Link href="/shop"
               className="px-8 py-3.5 bg-s3 border border-b1 text-txt text-sm font-bold tracking-wide rounded-xl hover:border-b3 hover:-translate-y-0.5 transition-all">
-              Lihat Shop
+              {t('Lihat Shop')}
             </Link>
           </div>
 
@@ -67,10 +70,10 @@ export default function Home() {
       {/* Features */}
       <section className="max-w-7xl mx-auto px-4 sm:px-6 py-24 w-full">
         <div className="text-center mb-14">
-          <p className="text-[10px] font-bold tracking-[.2em] uppercase text-accent mb-3">Apa yang ada di HALEA</p>
+          <p className="text-[10px] font-bold tracking-[.2em] uppercase text-accent mb-3">{t('Apa yang ada di HALEA')}</p>
           <h2 className="font-fraunces text-4xl sm:text-5xl font-semibold">
-            Semua yang kamu butuhkan untuk<br />
-            <span className="italic text-accent">grade seperti profesional</span>
+            {t('Semua yang kamu butuhkan untuk')}<br />
+            <span className="italic text-accent">{t('grade seperti profesional')}</span>
           </h2>
         </div>
 
@@ -82,8 +85,8 @@ export default function Home() {
                 <span className="text-3xl">{f.icon}</span>
                 <span className={`text-[9px] font-black tracking-widest uppercase px-2 py-1 rounded border border-current bg-current/10 ${f.bc}`}>{f.badge}</span>
               </div>
-              <h3 className="font-bold text-base mb-2 group-hover:text-accent transition-colors">{f.title}</h3>
-              <p className="text-t2 text-xs leading-relaxed">{f.desc}</p>
+              <h3 className="font-bold text-base mb-2 group-hover:text-accent transition-colors">{t(f.title)}</h3>
+              <p className="text-t2 text-xs leading-relaxed">{t(f.desc)}</p>
             </Link>
           ))}
         </div>
@@ -93,12 +96,12 @@ export default function Home() {
       <section className="border-t border-b1 bg-s1">
         <div className="max-w-7xl mx-auto px-4 sm:px-6 py-16 flex flex-col sm:flex-row items-center justify-between gap-6">
           <div>
-            <h3 className="font-fraunces text-2xl font-semibold mb-1">Mulai grading sinematik sekarang.</h3>
-            <p className="text-t2 text-sm">Tools gratis, berbasis AI, kompatibel dengan semua NLE.</p>
+            <h3 className="font-fraunces text-2xl font-semibold mb-1">{t('Mulai grading sinematik sekarang.')}</h3>
+            <p className="text-t2 text-sm">{t('Tools gratis, berbasis AI, kompatibel dengan semua NLE.')}</p>
           </div>
           <div className="flex gap-3">
             <Link href="/studio" className="px-6 py-3 bg-accent text-white text-sm font-bold rounded-xl hover:bg-orange-400 transition-colors">
-              Buka Studio →
+              {t('Buka Studio')} →
             </Link>
             <a href="https://instagram.com/haleastudio" target="_blank"
               className="px-6 py-3 bg-s3 border border-b1 text-t2 text-sm font-bold rounded-xl hover:border-b3 transition-colors">
@@ -114,7 +117,7 @@ export default function Home() {
           <span>© 2025 HALEA — by <a href="https://instagram.com/haleastudio" target="_blank" className="hover:text-accent transition-colors">@haleastudio</a></span>
           <div className="flex gap-4">
             {[['/', 'Beranda'], ['/studio', 'Studio'], ['/shop', 'Shop'], ['/ai', 'AI'], ['/learn', 'Belajar']].map(([href, label]) => (
-              <Link key={href} href={href} className="hover:text-txt transition-colors">{label}</Link>
+              <Link key={href} href={href} className="hover:text-txt transition-colors">{t(label)}</Link>
             ))}
           </div>
         </div>
