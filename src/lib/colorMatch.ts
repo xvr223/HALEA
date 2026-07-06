@@ -520,6 +520,34 @@ function sampleCast(c: ToneCast, L: number): [number, number] {
   return [c.binA[k] * (1 - t) + c.binA[k + 1] * t, c.binB[k] * (1 - t) + c.binB[k + 1] * t]
 }
 
+// ── v9: Auto White-Balance pre-pass ─────────────────────────────────────────
+// Colorist workflow: BALANCE first, then look. We estimate each side's
+// illuminant cast (robust gray-world: only near-neutral mid-luma pixels vote,
+// with a zero-prior so a scene with no true neutrals — all grass, all sky —
+// isn't force-balanced), match on balanced content, then in the LUT:
+//   pixel − footageCast → look → + referenceCast
+// The footage's accidental tint is removed; the reference's intentional tint
+// (golden hour, tungsten) is preserved as part of the look.
+function estimateNeutralCast(cloud: number[]): [number, number] {
+  const n = cloud.length / 3
+  if (n < 300) return [0, 0]
+  let wa = 0, wb = 0, ws = n * 0.02          // pseudo-mass pulls toward zero
+  for (let i = 0; i < cloud.length; i += 3) {
+    const L = cloud[i], a = cloud[i + 1], b = cloud[i + 2]
+    if (L < 0.12 || L > 0.93) continue
+    const C = Math.hypot(a, b)
+    const w = Math.exp(-C * 16) * (1 - Math.abs(L - 0.55) * 0.9)
+    wa += a * w; wb += b * w; ws += w
+  }
+  // partial trust + magnitude cap — extreme "casts" are usually content
+  let ca = (wa / ws) * 0.85, cb = (wb / ws) * 0.85
+  const m = Math.hypot(ca, cb), MAX = 0.05
+  if (m > MAX) { ca *= MAX / m; cb *= MAX / m }
+  return [ca, cb]
+}
+
+interface WBPair { fa: number; fb: number; ra: number; rb: number }
+
 interface ClusterMap { fc: number[][]; tgt: number[][]; sig2: number }
 
 // match footage palette → reference palette by similarity, build per-cluster targets
@@ -614,13 +642,17 @@ function oklabToSrgbGamut(L: number, a: number, b: number): [number, number, num
 // Bake the content-aware color transport + filmic tone over an RGB lattice →
 // dense LUT, folding in the skin layer + perceptual guards + gamut compression.
 interface SkinLayer { skinW: number; skinH: number; skinS: number; skinL: number; skinP: number }
-function bakeDenseFromClusters(cmap: ClusterMap, sk: SkinLayer, size: number, tone?: Float32Array, cast?: ToneCast): Float32Array {
+function bakeDenseFromClusters(cmap: ClusterMap, sk: SkinLayer, size: number, tone?: Float32Array, cast?: ToneCast, wb?: WBPair): Float32Array {
   const N = size
   const lut = new Float32Array(N * N * N * 3)
   let li = 0
   for (let bi = 0; bi < N; bi++) for (let gi = 0; gi < N; gi++) for (let ri = 0; ri < N; ri++) {
     const r0 = ri / (N - 1), g0 = gi / (N - 1), b0 = bi / (N - 1)
-    const [oL, oA, oB] = srgbToOklab(r0, g0, b0)
+    const [oL, oAr, oBr] = srgbToOklab(r0, g0, b0)
+    // v9 WB pre-pass: neutralize the footage cast FIRST, so the cluster warp,
+    // guards & skin detection all operate on balanced content — where the
+    // footage's clouds are truly neutral and its skin sits in the skin locus.
+    const oA = oAr - (wb ? wb.fa : 0), oB = oBr - (wb ? wb.fb : 0)
     // COLOR (a,b): content-aware cluster-correspondence warp (clouds→clouds, etc.)
     let [nA, nB] = applyClusterColor(oL, oA, oB, cmap)
     // SPLIT-TONE (a,b): impose the reference's tone-dependent colour cast so the
@@ -633,11 +665,18 @@ function bakeDenseFromClusters(cmap: ClusterMap, sk: SkinLayer, size: number, to
       if (oL > 0.85) cs *= Math.max(0, 1 - (oL - 0.85) / 0.13)   // protect near-whites/clouds
       nA += ca * cs; nB += cb * cs
     }
+    // v9: reintroduce the REFERENCE's own illuminant — the look's intentional
+    // tint (golden hour, tungsten) — on top of the balanced, warped content
+    if (wb) { nA += wb.ra; nB += wb.rb }
     // TONE (L): Smart Tone Engine filmic curve (controlled blacks/exposure/highlights)
     let nL = tone ? sampleCurve(tone, oL) : oL
-    const C0 = Math.hypot(oA, oB), Cn = Math.hypot(nA, nB)
+    // guard ANCHOR = the content under the TARGET illuminant (balanced + refWB).
+    // Guards bound deviation from where content legitimately sits in the look —
+    // for identity (foot==ref) the anchor equals the raw pixel, so no false pulls.
+    const aA = oA + (wb ? wb.ra : 0), aB = oB + (wb ? wb.rb : 0)
+    const C0 = Math.hypot(aA, aB), Cn = Math.hypot(nA, nB)
     if (C0 > 0.015 && Cn > 1e-5) {
-      let h0 = Math.atan2(oB, oA); if (h0 < 0) h0 += TAU
+      let h0 = Math.atan2(aB, aA); if (h0 < 0) h0 += TAU
       let hn = Math.atan2(nB, nA)
       let Cf = Cn
       const sw = softSkin(oL, oA, oB) * sk.skinW
@@ -1149,13 +1188,27 @@ export function computeSmartMatch(foot: ImageData, ref: ImageData): SmartMatchRe
     // v8: content-aware color via cluster correspondence (palette matching) +
     // Smart Tone Engine for luminance. Like regions map to like regions, so
     // clouds stay neutral instead of being recolored into blue sky.
-    const cmap = buildClusterMap(footCloud, refCloud)
+    // v9: estimate & strip each side's illuminant cast, match on BALANCED
+    // content (balance first, look second — the colorist workflow)
+    const [fwa, fwb] = estimateNeutralCast(footCloud)
+    let [rwa, rwb] = estimateNeutralCast(refCloud)
+    {
+      // deadband: two estimates of the SAME illuminant differ by sampling noise —
+      // snap them together so identical foot/ref stays a true no-op (net tint 0)
+      const da = rwa - fwa, db = rwb - fwb, dm = Math.hypot(da, db)
+      const t = dm <= 0.006 ? 0 : dm >= 0.012 ? 1 : (dm - 0.006) / 0.006
+      rwa = fwa + da * t; rwb = fwb + db * t
+    }
+    const balFoot = footCloud.slice(), balRef = refCloud.slice()
+    for (let i = 0; i < balFoot.length; i += 3) { balFoot[i + 1] -= fwa; balFoot[i + 2] -= fwb }
+    for (let i = 0; i < balRef.length; i += 3) { balRef[i + 1] -= rwa; balRef[i + 2] -= rwb }
+    const cmap = buildClusterMap(balFoot, balRef)
     if (cmap) {
       const N = 33                          // transport grid; Precision export upsamples to 65³
       const skin: SkinLayer = { skinW, skinH, skinS, skinL, skinP }
       const tone = buildSmartTone(F.histL, R.histL)   // filmic landmark tone
-      const cast = buildToneCast(footCloud, refCloud) || undefined  // split-tone cast
-      const lut = bakeDenseFromClusters(cmap, skin, N, tone, cast)
+      const cast = buildToneCast(balFoot, balRef) || undefined  // split-tone cast (balanced)
+      const lut = bakeDenseFromClusters(cmap, skin, N, tone, cast, { fa: fwa, fb: fwb, ra: rwa, rb: rwb })
       denseLut = { lut, size: N }
       lutSize = N
       lutId = registerDenseLut(lut, N)
