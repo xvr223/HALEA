@@ -162,7 +162,7 @@ export default function AboutPage() {
               Sepowerful apa <span className="italic text-accent">engine-nya?</span>
             </h2>
             <p className="text-t2 text-sm max-w-xl mx-auto leading-relaxed">
-              Smart Match Engine v8 dibangun di atas riset color science yang dipakai
+              Smart Match Engine v9 dibangun di atas riset color science yang dipakai
               industri film (Reinhard 2001, Pitié-Kokaram 2007, Chang et al. 2015) — lalu dikembangkan jauh melampauinya.
               Semua berjalan di perangkatmu, dalam hitungan detik.
             </p>
@@ -171,12 +171,20 @@ export default function AboutPage() {
           <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
             {[
               {
+                icon: <Palette size={16}/>, title: 'Auto Balance — Kerja Kayak Colorist',
+                desc: 'Balance dulu, look kemudian. Engine mengestimasi illuminant kedua gambar (cuma pixel netral yang "voting") lalu menetralkan cast footage yang miring — indoor kebiruan, neon kehijauan — sebelum look disentuh. Cast referensi (golden hour, tungsten) justru dipertahankan: itu bagian dari look-nya.',
+              },
+              {
                 icon: <Cpu size={16}/>, title: 'Content-Aware Cluster Correspondence',
                 desc: 'Engine memecah footage & referensi jadi cluster warna (k-means), lalu mencocokkan per PERAN tonal — "langit cerah ke langit cerah, awan ke awan" lewat luma + chroma. Region netral dikunci tetap netral, region jenuh dijaga punch-nya. Bukan transport global yang merusak konten.',
               },
               {
                 icon: <Sparkles size={16}/>, title: 'Split-Tone Cast — DNA Look',
-                desc: 'Bagian yang bikin look "nempel": tint film yang mewarnai shadow ke satu arah & highlight ke arah lain — termasuk di abu-abu & netral. Diukur dari pixel netral referensi, jadi yang ketangkep itu grade-nya, bukan warna memori. Di atasnya, Smart Tone bangun kurva filmic (toe/shoulder) buat blacks & highlight.',
+                desc: 'Bagian yang bikin look "nempel": tint film yang mewarnai shadow ke satu arah & highlight ke arah lain — termasuk di abu-abu & netral. Diukur dari pixel netral referensi, jadi yang ketangkep itu grade-nya, bukan warna memori.',
+              },
+              {
+                icon: <Film size={16}/>, title: 'Smart Tone — Filmic Landmarks',
+                desc: 'Blacks, exposure, kontras & highlight dipetakan lewat landmark tonal referensi (black / shadow / mid / highlight / white) jadi kurva monotonic dengan toe & shoulder filmic — hitam duduk pas, highlight roll-off lembut, tidak pernah clip kasar.',
               },
               {
                 icon: <ShieldCheck size={16}/>, title: 'Skin Intelligence',
@@ -201,7 +209,7 @@ export default function AboutPage() {
           <div className="mt-8 bg-s2 border border-b1 rounded-2xl p-5 overflow-x-auto">
             <p className="text-[9px] font-black tracking-widest uppercase text-t3 mb-3 text-center">Pipeline sekali klik</p>
             <div className="flex items-center justify-center gap-2 min-w-max mx-auto text-[10px] font-bold">
-              {['Log Decode', 'Cluster Match', 'Split-Tone Cast', 'Smart Tone', 'Skin Layer', 'Dense 3D LUT', 'Guards', 'Export'].map((step, i, arr) => (
+              {['Log Decode', 'Auto Balance', 'Cluster Match', 'Split-Tone Cast', 'Smart Tone', 'Skin Layer', 'Dense 3D LUT', 'Guards', 'Export'].map((step, i, arr) => (
                 <span key={step} className="flex items-center gap-2">
                   <span className={`px-3 py-1.5 rounded-full border ${i === arr.length - 1 ? 'bg-accent text-white border-accent' : 'bg-s3 border-b2 text-t2'}`}>{step}</span>
                   {i < arr.length - 1 && <span className="text-t3">→</span>}
@@ -232,16 +240,16 @@ export default function AboutPage() {
         </div>
       </section>
 
-      {/* ── PERJALANAN ENGINE V1 → V8 ────────────────────────────────────── */}
+      {/* ── PERJALANAN ENGINE V1 → V9 ────────────────────────────────────── */}
       <section className="border-t border-b1">
         <div className="max-w-3xl mx-auto px-6 py-16 md:py-24">
           <div className="text-center mb-12">
             <p className="text-[9px] font-black tracking-[0.3em] uppercase text-accent mb-3">Bukan dibangun dalam semalam</p>
             <h2 className="font-fraunces text-3xl md:text-4xl font-semibold mb-4">
-              Perjalanan <span className="italic text-accent">Engine</span> — V1 ke V8
+              Perjalanan <span className="italic text-accent">Engine</span> — V1 ke V9
             </h2>
             <p className="text-t2 text-sm max-w-xl mx-auto leading-relaxed">
-              Delapan generasi, ratusan jam riset & ngoprek. Tiap versi lahir dari satu masalah nyata yang
+              Sembilan generasi, ratusan jam riset & ngoprek. Tiap versi lahir dari satu masalah nyata yang
               bikin hasil grading belum &ldquo;nempel&rdquo;. Ini catatan perjalanannya.
             </p>
           </div>
@@ -295,10 +303,16 @@ export default function AboutPage() {
                   flaw: 'Tone & warna sudah presisi — tapi transport warnanya masih "global": region netral (awan, kabut) bisa ketarik warna dominan referensi → awan putih bisa berubah kebiruan.',
                 },
                 {
-                  v: 'V8', tag: 'Content-Aware — Cluster + Split-Tone', cur: true,
+                  v: 'V8', tag: 'Content-Aware — Cluster + Split-Tone', cur: false,
                   problem: 'Transport global tidak sadar KONTEN. Referensi langit biru → awan putih ikut ketarik biru. Dan look yang sebenarnya hidup di abu-abu (cast film stock) hilang karena cuma region jenuh yang dikoreksi.',
-                  fix: 'Tiga pilar. (1) Cluster correspondence: k-means cocokkan region per PERAN tonal — luma + chroma, TANPA penalti hue (Chang et al. 2015) — jadi region bebas mengadopsi warna referensi (langit biru → teal), netral dikunci. (2) Split-tone cast: tint shadow/highlight referensi diukur dari pixel netralnya & dikenakan ke seluruh frame termasuk abu — ini "DNA" look-nya. (3) Skin ikut look tapi soft-capped biar tetap natural. Semua jalur Smart Tone + dense LUT.',
-                  flaw: 'Hasil: awan tetap awan, langit dapat teal, abu-abu kebawa cast vintage, kulit senada tapi terjaga. Engine yang sama kini juga menyalakan AI Look (prompt → grade), bukan cuma referensi foto. Inilah HALEA sekarang.',
+                  fix: 'Tiga pilar. (1) Cluster correspondence: k-means cocokkan region per PERAN tonal — luma + chroma, TANPA penalti hue (Chang et al. 2015) — jadi region bebas mengadopsi warna referensi (langit biru → teal), netral dikunci. (2) Split-tone cast: tint shadow/highlight referensi diukur dari pixel netralnya & dikenakan ke seluruh frame termasuk abu — ini "DNA" look-nya. (3) Skin ikut look tapi soft-capped biar tetap natural. Semua jalur Smart Tone + dense LUT. Engine yang sama juga menyalakan AI Look (prompt → grade).',
+                  flaw: 'Konten aman & look nempel — tapi footage dengan white balance miring (indoor kebiruan, neon kehijauan) dibaca apa adanya: cast salah dianggap konten, netral tinted lolos dari proteksi, dan jatah koreksi habis buat benerin WB.',
+                },
+                {
+                  v: 'V9', tag: 'Auto Balance — Balance First, Look Second', cur: true,
+                  problem: 'Aturan pertama colorist: balance dulu, baru grade. Engine langsung matching di footage yang WB-nya miring — awan tinted dianggap "konten berwarna", skin meleset dari detektornya, dan koreksi look tercampur koreksi WB.',
+                  fix: 'Auto White-Balance pre-pass: illuminant kedua gambar diestimasi (robust gray-world — cuma pixel netral mid-luma yang voting, ada prior nol + cap biar scene tanpa netral atau golden hour tidak dipaksa balance). Matching, split-tone & deteksi skin semua jalan di konten yang SUDAH balanced. Di LUT final: cast footage dibuang, cast referensi dipertahankan — karena tint referensi itu bagian dari look-nya. Guard di-anchor ke konten di bawah illuminant target.',
+                  flaw: 'Hasil: footage WB miring dibersihkan otomatis sebelum look masuk, tint golden-hour referensi utuh, dan identity test lebih akurat dari v8. Inilah engine yang dipakai HALEA sekarang.',
                 },
               ].map((e) => (
                 <div key={e.v} className="relative sm:pl-14">
@@ -364,7 +378,7 @@ export default function AboutPage() {
       <section className="border-t border-b border-b1 bg-s2">
         <div className="max-w-5xl mx-auto px-6 py-14 grid grid-cols-2 md:grid-cols-4 gap-8 text-center">
           {[
-            { n: 'V8',     label: 'Generasi engine sekarang' },
+            { n: 'V9',     label: 'Generasi engine sekarang' },
             { n: '0',      label: 'Foto di-upload ke server' },
             { n: '8',      label: 'Format log — rumus exact' },
             { n: '24',     label: 'Sel koreksi per match' },

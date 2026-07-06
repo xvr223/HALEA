@@ -74,7 +74,7 @@ function analyzeColorProfile(imageData: ImageData): GradeResult {
 
 // ── Synthetic reference ─────────────────────────────────────────────────────
 // Renders an AI grade recipe onto a canonical neutral+memory test scene, so a
-// TEXT PROMPT can be reverse-engineered by the exact same v8 content-aware engine
+// TEXT PROMPT can be reverse-engineered by the exact same v9 content-aware engine
 // (cluster correspondence + split-tone cast + Smart Tone + skin) as a real photo.
 // The neutral ramp carries the split-tone & tonal landmarks; the memory colours
 // (skin/sky/foliage/…) give the engine content clusters to match the footage to.
@@ -455,7 +455,7 @@ ${ctx}`
 
       if (footImg) {
         // ── SMART AI LOOK ── render the recipe onto a canonical scene, then run the
-        // SAME v8 content-aware engine as a real reference photo (cluster matching +
+        // SAME v9 content-aware engine as a real reference photo (cluster matching +
         // split-tone cast + Smart Tone + skin) so the prompt look is just as canggih.
         const normFoot = convertImageData(footImg, logProfile, logGain)
         const synthRef = buildSynthRef(aiNodes, normFoot)

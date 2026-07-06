@@ -5,7 +5,7 @@ import { joinWaitlist } from '@/lib/launch'
 import { useI18n, useT } from '@/lib/i18n'
 
 const FEATURES = [
-  ['🎬', 'Color Match Studio', 'Tiru look dari foto referensi mana pun — engine v8 content-aware mencocokkan region footage-mu ke referensi. Bukan filter, tapi transformasi yang dihitung.'],
+  ['🎬', 'Color Match Studio', 'Tiru look dari foto referensi mana pun — engine v9 content-aware menetralkan white balance footage dulu, lalu mencocokkan region ke referensi. Bukan filter, tapi transformasi yang dihitung.'],
   ['✨', 'AI Look dari Prompt', 'Ketik "kayak film Godfather" atau "sunset Bali hangat" — AI colorist nerjemahin jadi grade berlapis yang baca footage-mu dulu.'],
   ['⚡', 'Shot Matcher', 'Banyak klip beda kamera/lighting? Samakan semua ke satu master look — tiap klip dapat LUT-nya sendiri.'],
   ['🪵', 'Log Support', 'S-Log3, V-Log, D-Log, Apple Log, F-Log, C-Log3, HLG — di-decode pakai rumus resmi vendor, auto-deteksi.'],
@@ -107,7 +107,7 @@ export function Waitlist() {
               {t('Bukan filter.')} <span className="italic text-accent">{t('Engine warna riset-grade.')}</span>
             </h2>
             <p className="text-t2 text-sm max-w-xl mx-auto mt-4 leading-relaxed">
-              {t('Dibangun di atas riset color science industri film (Reinhard 2001, Pitié-Kokaram 2007, Chang 2015) — lalu dikembangkan 8 generasi. Inilah yang ada di dalamnya:')}
+              {t('Dibangun di atas riset color science industri film (Reinhard 2001, Pitié-Kokaram 2007, Chang 2015) — lalu dikembangkan 9 generasi. Inilah yang ada di dalamnya:')}
             </p>
           </div>
           <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">

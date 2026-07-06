@@ -100,8 +100,8 @@ const EN: Record<string, string> = {
   'Sepowerful apa?': 'How powerful?',
   'Bukan filter.': 'Not a filter.',
   'Engine warna riset-grade.': 'A research-grade color engine.',
-  'Dibangun di atas riset color science industri film (Reinhard 2001, Pitié-Kokaram 2007, Chang 2015) — lalu dikembangkan 8 generasi. Inilah yang ada di dalamnya:':
-    "Built on the color science research used by the film industry (Reinhard 2001, Pitié-Kokaram 2007, Chang 2015) — then evolved through 8 generations. Here's what's inside:",
+  'Dibangun di atas riset color science industri film (Reinhard 2001, Pitié-Kokaram 2007, Chang 2015) — lalu dikembangkan 9 generasi. Inilah yang ada di dalamnya:':
+    "Built on the color science research used by the film industry (Reinhard 2001, Pitié-Kokaram 2007, Chang 2015) — then evolved through 9 generations. Here's what's inside:",
   'Region dicocokkan per konten — langit ke langit, awan tetap netral. Look nempel tanpa merusak subjek.':
     'Regions are matched by content — sky to sky, clouds stay neutral. The look lands without destroying the subject.',
   'Tint film di shadow & highlight — DNA sebuah look — diukur dari referensi dan dikenakan ke seluruh frame.':
@@ -113,8 +113,8 @@ const EN: Record<string, string> = {
     'Your photos are never uploaded to a server. Private, instant, free to run.',
   'Satu ekosistem lengkap': 'One complete ecosystem',
   'Semua yang editor butuhkan': 'Everything an editor needs',
-  'Tiru look dari foto referensi mana pun — engine v8 content-aware mencocokkan region footage-mu ke referensi. Bukan filter, tapi transformasi yang dihitung.':
-    'Copy the look of any reference photo — the content-aware v8 engine matches your footage regions to the reference. Not a filter: a computed transformation.',
+  'Tiru look dari foto referensi mana pun — engine v9 content-aware menetralkan white balance footage dulu, lalu mencocokkan region ke referensi. Bukan filter, tapi transformasi yang dihitung.':
+    'Copy the look of any reference photo — the content-aware v9 engine first neutralizes your footage\'s white balance, then matches regions to the reference. Not a filter: a computed transformation.',
   'AI Look dari Prompt': 'AI Look from a Prompt',
   'Ketik "kayak film Godfather" atau "sunset Bali hangat" — AI colorist nerjemahin jadi grade berlapis yang baca footage-mu dulu.':
     'Type "like The Godfather" or "warm Bali sunset" — an AI colorist translates it into a layered grade that reads your footage first.',
