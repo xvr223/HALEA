@@ -40,6 +40,11 @@ export interface SmartMatchResult {
   // Falls back to the parametric model when absent (e.g. decoded HALEA Codes).
   lutId?: string
   lutSize?: number
+  // v10 finishing layer (spatial — can't live in a LUT): extra film grain the
+  // look carries beyond the footage, and its local-contrast (clarity) ratio.
+  // Applied by photo export / preview, not the LUT.
+  grain: number
+  clarity: number
 }
 
 const clamp01 = (v: number) => v < 0 ? 0 : v > 1 ? 1 : v
@@ -548,34 +553,143 @@ function estimateNeutralCast(cloud: number[]): [number, number] {
 
 interface WBPair { fa: number; fb: number; ra: number; rb: number }
 
+// ── v10: Residual refinement — the engine's "second look" ───────────────────
+// After the first bake, run the footage through the LUT, measure what STILL
+// differs from the reference, and express the correction as the classic
+// colorist secondary curves: hue-vs-hue rotation, per-band saturation response,
+// per-band luma trim, plus a chroma quantile map (sat-vs-sat). Damped & clamped
+// so it converges instead of oscillating; identical foot/ref measures ≈0 and
+// skips the second pass entirely.
+const RES_NB = 8
+interface ResidLayer { dH: Float32Array; dS: Float32Array; dL: Float32Array; cq?: Float32Array }
+
+function measureResidual(footRaw: number[], refRaw: number[], lut: Float32Array, N: number): ResidLayer | null {
+  const d: DenseLut = { lut, size: N }
+  const CQ_N = 64, CQ_MAX = 0.4
+  const acc = () => ({ cos: new Float64Array(RES_NB), sin: new Float64Array(RES_NB), C: new Float64Array(RES_NB), L: new Float64Array(RES_NB), n: new Float64Array(RES_NB), hist: new Float64Array(CQ_N), hn: 0 })
+  const A = acc(), B = acc()
+  const feed = (S: ReturnType<typeof acc>, L: number, a: number, b: number) => {
+    if (L < 0.03 || L > 0.97) return
+    const C = Math.hypot(a, b)
+    let k = Math.floor(C / CQ_MAX * CQ_N); if (k >= CQ_N) k = CQ_N - 1
+    S.hist[k]++; S.hn++
+    if (C < 0.03) return
+    let h = Math.atan2(b, a); if (h < 0) h += TAU
+    const bi = Math.min(RES_NB - 1, Math.floor(h / TAU * RES_NB))
+    S.cos[bi] += Math.cos(h); S.sin[bi] += Math.sin(h); S.C[bi] += C; S.L[bi] += L; S.n[bi]++
+  }
+  const step = (raw: number[]) => Math.max(3, Math.floor(raw.length / 3 / 20000) * 3)
+  const fs = step(footRaw)
+  for (let i = 0; i + 2 < footRaw.length; i += fs) {
+    const [sr, sg, sb] = oklabToSrgb(footRaw[i], footRaw[i + 1], footRaw[i + 2])
+    const [mr, mg, mb] = trilinear(d, clamp01(sr), clamp01(sg), clamp01(sb))
+    const [L, a, b] = srgbToOklab(mr, mg, mb)
+    feed(A, L, a, b)
+  }
+  const rs = step(refRaw)
+  for (let i = 0; i + 2 < refRaw.length; i += rs) feed(B, refRaw[i], refRaw[i + 1], refRaw[i + 2])
+
+  const totA = A.n.reduce((s, x) => s + x, 0), totB = B.n.reduce((s, x) => s + x, 0)
+  if (totA < 400 || totB < 400) return null
+  const dH = new Float32Array(RES_NB), dS = new Float32Array(RES_NB).fill(1), dL = new Float32Array(RES_NB)
+  let active = false
+  for (let b = 0; b < RES_NB; b++) {
+    if (A.n[b] < totA * 0.015 || B.n[b] < totB * 0.015) continue
+    const hA = Math.atan2(A.sin[b], A.cos[b]), hB = Math.atan2(B.sin[b], B.cos[b])
+    dH[b] = clampN(angDiff(hB, hA), -0.30, 0.30) * 0.65
+    dS[b] = 1 + (clampN((B.C[b] / B.n[b]) / Math.max(A.C[b] / A.n[b], 1e-4), 0.72, 1.35) - 1) * 0.65
+    dL[b] = clampN(B.L[b] / B.n[b] - A.L[b] / A.n[b], -0.07, 0.07) * 0.6
+    if (Math.abs(dH[b]) > 0.01 || Math.abs(dS[b] - 1) > 0.02 || Math.abs(dL[b]) > 0.006) active = true
+  }
+  // chroma quantile map (sat-vs-sat): result CDF → ref quantiles, damped 0.5
+  let cq: Float32Array | undefined
+  if (A.hn > 400 && B.hn > 400) {
+    const cdf = (h: Float64Array, tot: number) => { const c = new Float64Array(CQ_N); let s = 0; for (let k = 0; k < CQ_N; k++) { s += h[k]; c[k] = s / tot } return c }
+    const cA = cdf(A.hist, A.hn), cB = cdf(B.hist, B.hn)
+    cq = new Float32Array(CQ_N)
+    let j = 0
+    for (let k = 0; k < CQ_N; k++) {
+      const q = cA[k]
+      while (j < CQ_N - 1 && cB[j] < q) j++
+      const Cin = (k + 0.5) / CQ_N * CQ_MAX
+      let Cout = (j + 0.5) / CQ_N * CQ_MAX
+      Cout = clampN(Cout, Cin * 0.7, Cin * 1.4 + 0.008)      // bounded response
+      cq[k] = Cin + (Cout - Cin) * 0.5                        // damped
+      if (k > 0 && cq[k] < cq[k - 1]) cq[k] = cq[k - 1]       // monotone
+      if (Math.abs(cq[k] - Cin) > 0.006) active = true
+    }
+  }
+  return active ? { dH, dS, dL, cq } : null
+}
+
+// circularly-interpolated band residual at hue h (band centers at (b+0.5)/NB)
+function sampleResid(r: ResidLayer, h: number): [number, number, number] {
+  let x = (h / TAU) * RES_NB - 0.5
+  if (x < 0) x += RES_NB
+  const b0 = Math.floor(x) % RES_NB, b1 = (b0 + 1) % RES_NB, t = x - Math.floor(x)
+  return [
+    r.dH[b0] * (1 - t) + r.dH[b1] * t,
+    r.dS[b0] * (1 - t) + r.dS[b1] * t,
+    r.dL[b0] * (1 - t) + r.dL[b1] * t,
+  ]
+}
+function sampleCq(cq: Float32Array, C: number): number {
+  const CQ_MAX = 0.4
+  if (C >= CQ_MAX) return C * (cq[cq.length - 1] / ((cq.length - 0.5) / cq.length * CQ_MAX))
+  const x = C / CQ_MAX * cq.length - 0.5
+  if (x <= 0) return cq[0] * (C / (0.5 / cq.length * CQ_MAX))
+  const k = Math.min(cq.length - 2, Math.floor(x)), t = x - k
+  return cq[k] * (1 - t) + cq[k + 1] * t
+}
+
 interface ClusterMap { fc: number[][]; tgt: number[][]; sig2: number }
 
-// match footage palette → reference palette by similarity, build per-cluster targets
+// match footage palette → reference palette, build per-cluster targets.
+// v10: assignment is solved as OPTIMAL TRANSPORT (Sinkhorn) instead of a
+// per-row softmax. Mass conservation means the WHOLE reference palette gets
+// used proportionally — no more several footage clusters piling onto one ref
+// colour while the rest of the look goes untransferred. Cost stays role-based
+// (luma primary, chroma-presence secondary, NO hue term — a hue penalty would
+// map every colour to its nearest twin = near-identity = "look tak berubah").
 function buildClusterMap(foot: number[], ref: number[]): ClusterMap | null {
   if (foot.length < 900 || ref.length < 900) return null
   const F = kmeansOklab(foot, KM_K), R = kmeansOklab(ref, KM_K)
   const Fc = F.c, Rc = R.c
-  const refTotal = Math.max(1, ref.length / 3)
   const ch = (c: number[]) => Math.hypot(c[1], c[2])
+  // masses = normalized cluster populations (tiny floor keeps Sinkhorn stable)
+  const fTot = F.pop.reduce((s, x) => s + x, 0) || 1
+  const rTot = R.pop.reduce((s, x) => s + x, 0) || 1
+  const am = F.pop.map(p => p / fTot + 1e-4)
+  const bm = R.pop.map(p => p / rTot + 1e-4)
+  // role cost matrix + Gibbs kernel. ε tuned so identical palettes resolve to a
+  // clean diagonal (identity) while distinct palettes still share mass smoothly.
+  const EPS = 0.045
+  const Kmat: number[][] = []
+  for (let i = 0; i < KM_K; i++) {
+    const fc = Fc[i], fch = ch(fc)
+    const row: number[] = []
+    for (let j = 0; j < KM_K; j++) {
+      const rc = Rc[j], rch = ch(rc)
+      const cost = Math.abs(fc[0] - rc[0]) * 3.0 + Math.abs(fch - rch) * 2.4
+      row.push(Math.exp(-cost / EPS))
+    }
+    Kmat.push(row)
+  }
+  // Sinkhorn iterations (10×10 — converges in a blink)
+  const u = new Array(KM_K).fill(1), v = new Array(KM_K).fill(1)
+  for (let it = 0; it < 60; it++) {
+    for (let i = 0; i < KM_K; i++) { let s = 0; for (let j = 0; j < KM_K; j++) s += Kmat[i][j] * v[j]; u[i] = am[i] / Math.max(s, 1e-12) }
+    for (let j = 0; j < KM_K; j++) { let s = 0; for (let i = 0; i < KM_K; i++) s += Kmat[i][j] * u[i]; v[j] = bm[j] / Math.max(s, 1e-12) }
+  }
   const tgt: number[][] = []
   for (let i = 0; i < KM_K; i++) {
     const fc = Fc[i], fch = ch(fc)
-    let wa = 0, wb = 0, wl = 0, wsum = 0
+    // transport plan row P_ij = u_i·K_ij·v_j — where cluster i's colours GO
+    let wa = 0, wb = 0, wl = 0, wsum = 1e-12
     for (let j = 0; j < KM_K; j++) {
-      const rc = Rc[j], rch = ch(rc)
-      // match by ROLE, NOT by colour-similarity. Tonal position (luma) is primary,
-      // chroma-presence (saturated↔saturated, neutral↔neutral) is secondary.
-      // Crucially there is NO hue term: the whole point of a look transfer is to let
-      // a region ADOPT the reference hue of its tonally-corresponding region
-      // (blue sky → the teal sky that sits in the same bright/saturated slot).
-      // A hue penalty would map every colour to its nearest twin = near-identity =
-      // "look tak berubah". Neutral/cloud regions are protected separately below via
-      // the chroma-presence term + neutral-retention, NOT by hue matching.
-      const lumaD = Math.abs(fc[0] - rc[0])
-      const chromaD = Math.abs(fch - rch)
-      const cost = lumaD * 3.0 + chromaD * 2.4
-      const w = Math.exp(-cost / 0.085) * (R.pop[j] / refTotal + 0.02)
-      wa += w * rc[1]; wb += w * rc[2]; wl += w * rc[0]; wsum += w
+      const p = u[i] * Kmat[i][j] * v[j]
+      const rc = Rc[j]
+      wa += p * rc[1]; wb += p * rc[2]; wl += p * rc[0]; wsum += p
     }
     let ta = wa / wsum, tb = wb / wsum
     // NEUTRAL PRESERVATION — a near-neutral footage cluster (clouds, grey walls,
@@ -642,7 +756,7 @@ function oklabToSrgbGamut(L: number, a: number, b: number): [number, number, num
 // Bake the content-aware color transport + filmic tone over an RGB lattice →
 // dense LUT, folding in the skin layer + perceptual guards + gamut compression.
 interface SkinLayer { skinW: number; skinH: number; skinS: number; skinL: number; skinP: number }
-function bakeDenseFromClusters(cmap: ClusterMap, sk: SkinLayer, size: number, tone?: Float32Array, cast?: ToneCast, wb?: WBPair): Float32Array {
+function bakeDenseFromClusters(cmap: ClusterMap, sk: SkinLayer, size: number, tone?: Float32Array, cast?: ToneCast, wb?: WBPair, resid?: ResidLayer): Float32Array {
   const N = size
   const lut = new Float32Array(N * N * N * 3)
   let li = 0
@@ -668,8 +782,23 @@ function bakeDenseFromClusters(cmap: ClusterMap, sk: SkinLayer, size: number, to
     // v9: reintroduce the REFERENCE's own illuminant — the look's intentional
     // tint (golden hour, tungsten) — on top of the balanced, warped content
     if (wb) { nA += wb.ra; nB += wb.rb }
+    // v10: RESIDUAL secondary curves — the second-pass correction measured from
+    // the first bake (hue-vs-hue, sat response, per-band luma, sat-vs-sat)
+    let dLr = 0
+    if (resid) {
+      let hh = Math.atan2(nB, nA); if (hh < 0) hh += TAU
+      let Cc = Math.hypot(nA, nB)
+      const [rdH, rdS, rdL] = sampleResid(resid, hh)
+      if (Cc > 0.012) {
+        hh += rdH
+        Cc *= rdS
+        if (resid.cq) Cc = sampleCq(resid.cq, Cc)
+        nA = Cc * Math.cos(hh); nB = Cc * Math.sin(hh)
+      }
+      dLr = rdL
+    }
     // TONE (L): Smart Tone Engine filmic curve (controlled blacks/exposure/highlights)
-    let nL = tone ? sampleCurve(tone, oL) : oL
+    let nL = (tone ? sampleCurve(tone, oL) : oL) + dLr
     // guard ANCHOR = the content under the TARGET illuminant (balanced + refWB).
     // Guards bound deviation from where content legitimately sits in the look —
     // for identity (foot==ref) the anchor equals the raw pixel, so no false pulls.
@@ -779,7 +908,7 @@ export function getDenseLut(id: string | undefined): DenseLut | undefined {
 // tree (one LUT per serial node), tweak each stage independently, and save it
 // as an actual PowerGrade in their Gallery. Stage data is registered alongside
 // the dense LUT under the same id.
-interface StagePack { cmap: ClusterMap; cast?: ToneCast; tone?: Float32Array; wb: WBPair; skin: SkinLayer }
+interface StagePack { cmap: ClusterMap; cast?: ToneCast; tone?: Float32Array; wb: WBPair; skin: SkinLayer; resid?: ResidLayer }
 const stageRegistry = new Map<string, StagePack>()
 function registerStages(id: string, s: StagePack) {
   stageRegistry.set(id, s)
@@ -795,7 +924,7 @@ export interface NodeKit { balance?: Float32Array; look: Float32Array; tone: Flo
 export function bakeNodeKit(id: string | undefined, size = 33): NodeKit | null {
   const st = id ? stageRegistry.get(id) : undefined
   if (!st) return null
-  const { cmap, cast, tone, wb, skin: sk } = st
+  const { cmap, cast, tone, wb, skin: sk, resid } = st
   const N = size
   const hasBal = Math.hypot(wb.fa, wb.fb) > 0.003
   const bal = hasBal ? new Float32Array(N * N * N * 3) : undefined
@@ -825,6 +954,18 @@ export function bakeNodeKit(id: string | undefined, size = 33): NodeKit | null {
       }
       nA += wb.ra; nB += wb.rb
       let nL = oL
+      // v10 residual secondary curves (kept in sync with bakeDenseFromClusters)
+      if (resid) {
+        let hh = Math.atan2(nB, nA); if (hh < 0) hh += TAU
+        let Cc = Math.hypot(nA, nB)
+        const [rdH, rdS, rdL] = sampleResid(resid, hh)
+        if (Cc > 0.012) {
+          hh += rdH; Cc *= rdS
+          if (resid.cq) Cc = sampleCq(resid.cq, Cc)
+          nA = Cc * Math.cos(hh); nB = Cc * Math.sin(hh)
+        }
+        nL += rdL
+      }
       const aA = oA + wb.ra, aB = oB + wb.rb
       const C0 = Math.hypot(aA, aB), Cn = Math.hypot(nA, nB)
       if (C0 > 0.015 && Cn > 1e-5) {
@@ -882,6 +1023,51 @@ export function bakeNodeKit(id: string | undefined, size = 33): NodeKit | null {
   }
   smoothLut3D(look, N, 0.12)   // cluster warp needs the same anti-banding pass
   return { balance: bal, look, tone: toneL, size: N }
+}
+
+// ── v10: finishing measurements — film grain & local contrast (clarity) ─────
+// Spatial properties can't be encoded in a LUT, so they're measured here and
+// applied as a finishing layer by the photo export / live preview.
+// Grain: robust noise σ via median |horizontal 2nd difference| of luma.
+function measureGrain(img: ImageData): number {
+  const W = img.width, H = img.height, d = img.data
+  if (H < 8 || W < 24) return 0
+  const vals: number[] = []
+  const rows = Math.min(40, H)
+  for (let ry = 0; ry < rows; ry++) {
+    const y = Math.floor((ry + 0.5) * H / rows)
+    const base = y * W * 4
+    for (let x = 2; x < W - 2; x += 4) {
+      const i = base + x * 4
+      const L0 = d[i] * 0.2126 + d[i + 1] * 0.7152 + d[i + 2] * 0.0722
+      const Lm = d[i - 4] * 0.2126 + d[i - 3] * 0.7152 + d[i - 2] * 0.0722
+      const Lp = d[i + 4] * 0.2126 + d[i + 5] * 0.7152 + d[i + 6] * 0.0722
+      vals.push(Math.abs(Lm - 2 * L0 + Lp))
+    }
+  }
+  if (vals.length < 100) return 0
+  vals.sort((a, b) => a - b)
+  return vals[vals.length >> 1] / 255 / 2.45
+}
+// Clarity: mean |luma − 3×3 mean| on a ~96px thumbnail = mid-scale local contrast
+function measureClarity(img: ImageData): number {
+  const W0 = img.width, H0 = img.height, d = img.data
+  if (H0 < 12 || W0 < 24) return 0
+  const W = 96, H = Math.max(10, Math.round(H0 * W / W0))
+  const lum = new Float32Array(W * H)
+  for (let y = 0; y < H; y++) for (let x = 0; x < W; x++) {
+    const sx = Math.min(W0 - 1, Math.floor((x + 0.5) * W0 / W))
+    const sy = Math.min(H0 - 1, Math.floor((y + 0.5) * H0 / H))
+    const i = (sy * W0 + sx) * 4
+    lum[y * W + x] = (d[i] * 0.2126 + d[i + 1] * 0.7152 + d[i + 2] * 0.0722) / 255
+  }
+  let sum = 0, n = 0
+  for (let y = 1; y < H - 1; y++) for (let x = 1; x < W - 1; x++) {
+    let m = 0
+    for (let dy = -1; dy <= 1; dy++) for (let dx = -1; dx <= 1; dx++) m += lum[(y + dy) * W + x + dx]
+    sum += Math.abs(lum[y * W + x] - m / 9); n++
+  }
+  return n ? sum / n : 0
 }
 
 // trilinear sample of an RGB-domain dense LUT
@@ -1319,12 +1505,17 @@ export function computeSmartMatch(foot: ImageData, ref: ImageData): SmartMatchRe
       const skin: SkinLayer = { skinW, skinH, skinS, skinL, skinP }
       const tone = buildSmartTone(F.histL, R.histL)   // filmic landmark tone
       const cast = buildToneCast(balFoot, balRef) || undefined  // split-tone cast (balanced)
-      const lut = bakeDenseFromClusters(cmap, skin, N, tone, cast, { fa: fwa, fb: fwb, ra: rwa, rb: rwb })
+      const wbPair: WBPair = { fa: fwa, fb: fwb, ra: rwa, rb: rwb }
+      // v10 two-pass: bake, then MEASURE what's still off vs the reference and
+      // dial in secondary curves — the second look a colorist gives their grade
+      const lut1 = bakeDenseFromClusters(cmap, skin, N, tone, cast, wbPair)
+      const resid = measureResidual(footCloud, refCloud, lut1, N) || undefined
+      const lut = resid ? bakeDenseFromClusters(cmap, skin, N, tone, cast, wbPair, resid) : lut1
       denseLut = { lut, size: N }
       lutSize = N
       lutId = registerDenseLut(lut, N)
       // stage data for the PowerGrade Node Kit (per-node LUT export)
-      registerStages(lutId, { cmap, cast, tone, wb: { fa: fwa, fb: fwb, ra: rwa, rb: rwb }, skin })
+      registerStages(lutId, { cmap, cast, tone, wb: wbPair, skin, resid })
     }
   }
 
@@ -1432,5 +1623,7 @@ export function computeSmartMatch(foot: ImageData, ref: ImageData): SmartMatchRe
     shadowCast, highCast,
     toneDesc: parts.join(' · ') || 'Balanced tone',
     lutId, lutSize,
+    grain: clampN(measureGrain(ref) - measureGrain(foot), 0, 0.06),
+    clarity: (() => { const cF = measureClarity(foot), cR = measureClarity(ref); return cF > 0.004 && cR > 0.004 ? clampN(cR / cF, 0.85, 1.3) : 1 })(),
   }
 }

@@ -12,6 +12,69 @@ export interface GradeNodeLike {
 export const clamp = (v: number, lo = 0, hi = 1) => v < lo ? lo : v > hi ? hi : v
 export const luma  = (r: number, g: number, b: number) => 0.2126*r + 0.7152*g + 0.0722*b
 
+// ── v10 finishing layer: film grain + local contrast (clarity) ──────────────
+// Spatial effects that can't live in a LUT. Applied in-place on RGBA pixels by
+// the live preview & the photo export, using amounts MEASURED from the
+// reference by the engine (SmartMatchResult.grain / .clarity).
+// Grain is deterministic (position-hashed) so a still image doesn't shimmer.
+export function applyFinish(d: Uint8ClampedArray, w: number, h: number, grain: number, clarity: number) {
+  // clarity: unsharp on luma at a mid radius — L' = L + (L − blur)·(clarity−1)
+  if (clarity && Math.abs(clarity - 1) > 0.02) {
+    const n = w * h
+    const lum = new Float32Array(n)
+    for (let i = 0, p = 0; i < n; i++, p += 4) lum[i] = d[p]*0.2126 + d[p+1]*0.7152 + d[p+2]*0.0722
+    const r = Math.max(2, Math.round(Math.min(w, h) / 90))
+    // separable box blur (two passes), edge-clamped
+    const tmp = new Float32Array(n), blur = new Float32Array(n)
+    for (let y = 0; y < h; y++) {
+      const row = y * w
+      let acc = 0
+      for (let x = -r; x <= r; x++) acc += lum[row + Math.min(w - 1, Math.max(0, x))]
+      for (let x = 0; x < w; x++) {
+        tmp[row + x] = acc / (2 * r + 1)
+        acc += lum[row + Math.min(w - 1, x + r + 1)] - lum[row + Math.max(0, x - r)]
+      }
+    }
+    for (let x = 0; x < w; x++) {
+      let acc = 0
+      for (let y = -r; y <= r; y++) acc += tmp[Math.min(h - 1, Math.max(0, y)) * w + x]
+      for (let y = 0; y < h; y++) {
+        blur[y * w + x] = acc / (2 * r + 1)
+        acc += tmp[Math.min(h - 1, y + r + 1) * w + x] - tmp[Math.max(0, y - r) * w + x]
+      }
+    }
+    const k = clarity - 1
+    for (let i = 0, p = 0; i < n; i++, p += 4) {
+      const L = lum[i], det = (L - blur[i]) * k
+      if (det) {
+        const s = L > 1 ? (L + det) / L : 1 + det / Math.max(L, 8)   // scale RGB by luma ratio
+        d[p]   = Math.max(0, Math.min(255, d[p]   * s))
+        d[p+1] = Math.max(0, Math.min(255, d[p+1] * s))
+        d[p+2] = Math.max(0, Math.min(255, d[p+2] * s))
+      }
+    }
+  }
+  // grain: luma-weighted mono noise — strongest in mids (like film), fades in
+  // deep blacks & highlights, deterministic per position
+  if (grain > 0.002) {
+    const amp = grain * 255 * 1.6
+    for (let y = 0; y < h; y++) {
+      const row = y * w
+      for (let x = 0; x < w; x++) {
+        const p = (row + x) * 4
+        const L = (d[p]*0.2126 + d[p+1]*0.7152 + d[p+2]*0.0722) / 255
+        const wgt = 4 * L * (1 - L)                       // mid-tone emphasis
+        if (wgt < 0.03) continue
+        const s = Math.sin(x * 12.9898 + y * 78.233) * 43758.5453
+        const nz = ((s - Math.floor(s)) * 2 - 1) * amp * wgt
+        d[p]   = Math.max(0, Math.min(255, d[p]   + nz))
+        d[p+1] = Math.max(0, Math.min(255, d[p+1] + nz))
+        d[p+2] = Math.max(0, Math.min(255, d[p+2] + nz))
+      }
+    }
+  }
+}
+
 export function rgbToHsl(r: number, g: number, b: number): [number, number, number] {
   const max=Math.max(r,g,b), min=Math.min(r,g,b), d=max-min
   const l=(max+min)/2

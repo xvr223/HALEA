@@ -100,8 +100,8 @@ const EN: Record<string, string> = {
   'Sepowerful apa?': 'How powerful?',
   'Bukan filter.': 'Not a filter.',
   'Engine warna riset-grade.': 'A research-grade color engine.',
-  'Dibangun di atas riset color science industri film (Reinhard 2001, Pitié-Kokaram 2007, Chang 2015) — lalu dikembangkan 9 generasi. Inilah yang ada di dalamnya:':
-    "Built on the color science research used by the film industry (Reinhard 2001, Pitié-Kokaram 2007, Chang 2015) — then evolved through 9 generations. Here's what's inside:",
+  'Dibangun di atas riset color science industri film (Reinhard 2001, Pitié-Kokaram 2007, Chang 2015) — lalu dikembangkan 10 generasi. Inilah yang ada di dalamnya:':
+    "Built on the color science research used by the film industry (Reinhard 2001, Pitié-Kokaram 2007, Chang 2015) — then evolved through 10 generations. Here's what's inside:",
   'Region dicocokkan per konten — langit ke langit, awan tetap netral. Look nempel tanpa merusak subjek.':
     'Regions are matched by content — sky to sky, clouds stay neutral. The look lands without destroying the subject.',
   'Tint film di shadow & highlight — DNA sebuah look — diukur dari referensi dan dikenakan ke seluruh frame.':

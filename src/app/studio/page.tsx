@@ -7,7 +7,7 @@ import { useSettingsStore } from '@/store/settings'
 import { Badge, DropZone, toast } from '@/components/ui'
 import { Zap, Settings2, Film, Download } from 'lucide-react'
 import { computeSmartMatch, bakeNodeKit } from '@/lib/colorMatch'
-import { clamp, luma, rgbToHsl, hslToRgb, applyNodes } from '@/lib/grade'
+import { clamp, luma, rgbToHsl, hslToRgb, applyNodes, applyFinish } from '@/lib/grade'
 import { makeZip } from '@/lib/zip'
 import { encodeGrade, decodeGrade, copyText } from '@/lib/haleaCode'
 import { LogProfile, LOG_PROFILES, logToDisplay, convertImageData, computeAutoGain, detectLogProfile } from '@/lib/logProfiles'
@@ -320,6 +320,14 @@ export default function StudioPage() {
         out[i+2]=Math.round(clamp(bb+(nb-bb)*blend)*255)
         out[i+3]=data[i+3]
       }
+      // v10 finishing: grain + clarity measured from the reference (scaled by strength)
+      const mN = nodes.find(n=>n.type==='match'&&n.enabled)
+      if (mN) {
+        const amt = (mN.params.amount as number) || 0
+        const g  = ((mN.params.grain as number) || 0) * amt
+        const cl = 1 + (((mN.params.clar as number) || 1) - 1) * amt
+        if (g > 0.002 || Math.abs(cl - 1) > 0.02) applyFinish(out, width, height, g, cl)
+      }
       const c=document.createElement('canvas')
       c.width=width; c.height=height
       c.getContext('2d')!.putImageData(new ImageData(out,width,height), 0, 0)
@@ -373,6 +381,7 @@ export default function StudioPage() {
               bl0:m.bandL[0], bl1:m.bandL[1], bl2:m.bandL[2], bl3:m.bandL[3],
               bl4:m.bandL[4], bl5:m.bandL[5], bl6:m.bandL[6], bl7:m.bandL[7],
               skh:m.skinH, sks:m.skinS, skl:m.skinL, skw:m.skinW, skp:m.skinP,
+              grain:m.grain, clar:m.clarity,            // v10 finishing (foto/preview)
               ...zp,
               ...(m.lutId ? { lutId: m.lutId } : {}),   // v5 dense PowerGrade LUT
               amount:matchAmount } },
@@ -515,6 +524,7 @@ ${ctx}`
               bs0:m.bandS[0],bs1:m.bandS[1],bs2:m.bandS[2],bs3:m.bandS[3],bs4:m.bandS[4],bs5:m.bandS[5],bs6:m.bandS[6],bs7:m.bandS[7],
               bl0:m.bandL[0],bl1:m.bandL[1],bl2:m.bandL[2],bl3:m.bandL[3],bl4:m.bandL[4],bl5:m.bandL[5],bl6:m.bandL[6],bl7:m.bandL[7],
               skh:m.skinH,sks:m.skinS,skl:m.skinL,skw:m.skinW,skp:m.skinP,
+              grain:m.grain,clar:m.clarity,
               ...zp,
               ...(m.lutId?{lutId:m.lutId}:{}),
               amount:matchAmount } },
@@ -737,6 +747,14 @@ ${ctx}`
         d[i]=Math.round(clamp(br+(nr-br)*blend)*255)
         d[i+1]=Math.round(clamp(bg+(ng-bg)*blend)*255)
         d[i+2]=Math.round(clamp(bb+(nb-bb)*blend)*255)
+      }
+      // v10 finishing on the full-res export too
+      const mN = nodes.find(n=>n.type==='match'&&n.enabled)
+      if (mN) {
+        const amt = (mN.params.amount as number) || 0
+        const g  = ((mN.params.grain as number) || 0) * amt
+        const cl = 1 + (((mN.params.clar as number) || 1) - 1) * amt
+        if (g > 0.002 || Math.abs(cl - 1) > 0.02) applyFinish(d, w, h, g, cl)
       }
       ctx.putImageData(id, 0, 0)
       const blob: Blob|null = await new Promise(r=>c.toBlob(r, 'image/jpeg', 0.95))

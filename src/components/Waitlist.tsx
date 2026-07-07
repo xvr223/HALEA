@@ -107,7 +107,7 @@ export function Waitlist() {
               {t('Bukan filter.')} <span className="italic text-accent">{t('Engine warna riset-grade.')}</span>
             </h2>
             <p className="text-t2 text-sm max-w-xl mx-auto mt-4 leading-relaxed">
-              {t('Dibangun di atas riset color science industri film (Reinhard 2001, Pitié-Kokaram 2007, Chang 2015) — lalu dikembangkan 9 generasi. Inilah yang ada di dalamnya:')}
+              {t('Dibangun di atas riset color science industri film (Reinhard 2001, Pitié-Kokaram 2007, Chang 2015) — lalu dikembangkan 10 generasi. Inilah yang ada di dalamnya:')}
             </p>
           </div>
           <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
