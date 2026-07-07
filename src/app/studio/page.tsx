@@ -6,8 +6,9 @@ import { useAuthStore } from '@/store/auth'
 import { useSettingsStore } from '@/store/settings'
 import { Badge, DropZone, toast } from '@/components/ui'
 import { Zap, Settings2, Film, Download } from 'lucide-react'
-import { computeSmartMatch } from '@/lib/colorMatch'
+import { computeSmartMatch, bakeNodeKit } from '@/lib/colorMatch'
 import { clamp, luma, rgbToHsl, hslToRgb, applyNodes } from '@/lib/grade'
+import { makeZip } from '@/lib/zip'
 import { encodeGrade, decodeGrade, copyText } from '@/lib/haleaCode'
 import { LogProfile, LOG_PROFILES, logToDisplay, convertImageData, computeAutoGain, detectLogProfile } from '@/lib/logProfiles'
 
@@ -133,6 +134,47 @@ const makeCubeContent = (lut:Float32Array, size:number) => {
   for(let i=0;i<lut.length;i+=3) c+=`${lut[i].toFixed(6)} ${lut[i+1].toFixed(6)} ${lut[i+2].toFixed(6)}\n`
   return c
 }
+
+const kitReadme = (name: string, cubes: string[]) => `HALEA PowerGrade Kit — ${name}
+${'='.repeat(30 + name.length)}
+
+Kit ini = grade HALEA dipecah per-tahap, satu LUT per node — biar di DaVinci
+kamu punya node tree beneran yang tiap tahapnya bisa diatur sendiri.
+
+CARA PASANG (± 2 menit, cukup sekali):
+
+1. Copy semua file .cube ke folder LUT Resolve:
+   Windows : C:\\ProgramData\\Blackmagic Design\\DaVinci Resolve\\Support\\LUT\\
+   Mac     : /Library/Application Support/Blackmagic Design/DaVinci Resolve/LUT/
+   (atau: Project Settings -> Color Management -> Open LUT Folder)
+2. Di Resolve: klik kanan area LUT -> "Refresh" (atau restart Resolve).
+3. Di Color page, bikin node serial sejumlah file .cube (Alt+S / Opt+S).
+4. Klik kanan tiap node -> LUT -> pilih sesuai URUTAN NOMOR file:
+${cubes.filter(c => c.endsWith('.cube')).map((c, i) => `   Node ${i + 1}  ->  ${c}`).join('\n')}
+   Kasih label tiap node (klik kanan -> Node Label) biar rapi.
+5. (Opsional) Tambah node terakhir buat halation: OpenFX -> Glow,
+   threshold tinggi + tint merah-oranye tipis.
+
+JADIKAN POWERGRADE ASLI (.drx punyamu sendiri):
+6. Buka Gallery -> klik kanan viewer -> "Grab Still".
+7. Drag still itu ke album "PowerGrades".
+   SELESAI. Sekarang tinggal drag still-nya ke clip mana pun di project
+   mana pun — semua node muncul lengkap & bisa diedit satu-satu.
+
+FUNGSI TIAP NODE (urutannya penting — ikuti nomor):
+- 00_LogDecode  : (kalau ada) konversi log -> display. Selalu paling depan.
+- Balance_WB    : netralin white balance footage (Auto Balance v9).
+                  Footage kamu udah balanced? Matikan aja node ini (Ctrl+D).
+- Tone_Filmic   : blacks / exposure / kontras / highlight (Smart Tone).
+- Look_Color    : jiwa grade-nya — content-aware cluster + split-tone cast
+                  + skin intelligence. Sengaja paling akhir: langkah warna
+                  terbesar jadi sentuhan gamut terakhir (paling akurat).
+
+TIPS: kekuatan tiap node bisa dikurangi lewat "Key Output Gain" di panel Key
+(mis. Look di 0.70 buat versi subtle) — itulah enaknya node-by-node.
+
+Dibuat dengan HALEA · engine v9 · instagram.com/haleastudio
+`
 
 type MobileTab = 'setup' | 'preview' | 'export'
 
@@ -737,6 +779,57 @@ ${ctx}`
   }
   const [showDvHelp, setShowDvHelp] = useState(false)
 
+  // ── PowerGrade Node Kit — per-stage LUTs → real node tree in DaVinci ────────
+  // .drx is a proprietary Blackmagic format (can't be generated outside Resolve),
+  // so we ship the next best thing: one LUT per pipeline stage + instructions.
+  // User builds the serial nodes once, grabs a still into the Gallery → that IS
+  // a real PowerGrade with every node visible & editable.
+  const [kitBaking, setKitBaking] = useState(false)
+  const downloadPowerGradeKit = async () => {
+    if (!authUser) {
+      toast('Daftar gratis dulu untuk export PowerGrade Kit ✦', 'warn')
+      router.push('/login?next=/studio'); return
+    }
+    const matchN = nodes.find(n => n.type === 'match')
+    const kit = bakeNodeKit(matchN?.params.lutId as string | undefined, 33)
+    if (!kit) { toast('PowerGrade Kit butuh hasil Match Colors / AI Look dari sesi ini (bukan import HALEA Code)', 'warn'); return }
+    if (!useCredit(powerGradeCost)) {
+      toast(`Kredit kurang — PowerGrade Kit butuh ${powerGradeCost} kredit. Top up di Shop 🛍`, 'err')
+      return
+    }
+    setKitBaking(true)
+    await new Promise(r => setTimeout(r, 30))
+    try {
+      const name = (lutName || 'HALEA').replace(/\s+/g, '_')
+      const files: { name: string; data: string }[] = []
+      let n = 1
+      // 00 — log decode node (only when footage is log)
+      if (logProfile !== 'rec709') {
+        const NL = 33, lg = new Float32Array(NL * NL * NL * 3); let li = 0
+        for (let bi = 0; bi < NL; bi++) for (let gi = 0; gi < NL; gi++) for (let ri = 0; ri < NL; ri++) {
+          const [dr, dg, db] = logToDisplay(logProfile, logGain, ri / (NL - 1), gi / (NL - 1), bi / (NL - 1))
+          lg[li++] = clamp(dr); lg[li++] = clamp(dg); lg[li++] = clamp(db)
+        }
+        files.push({ name: `00_LogDecode_${logProfile}.cube`, data: makeCubeContent(lg, NL) })
+      }
+      // node order: Balance → Tone → Look. Look goes LAST so the big chroma
+      // moves are the final gamut touch — closest to the integrated LUT.
+      if (kit.balance) files.push({ name: `0${n++}_Balance_WB.cube`, data: makeCubeContent(kit.balance, kit.size) })
+      files.push({ name: `0${n++}_Tone_Filmic.cube`, data: makeCubeContent(kit.tone, kit.size) })
+      files.push({ name: `0${n++}_Look_Color.cube`, data: makeCubeContent(kit.look, kit.size) })
+      files.push({ name: 'README_CARA_PASANG.txt', data: kitReadme(name, files.map(f => f.name)) })
+      const blob = makeZip(files)
+      const a = document.createElement('a')
+      a.href = URL.createObjectURL(blob); a.download = name + '_PowerGradeKit.zip'; a.click()
+      setTimeout(() => URL.revokeObjectURL(a.href), 2000)
+      toast('🎛 PowerGrade Kit terdownload — baca README buat pasang node-nya!')
+    } catch {
+      if (!isAdmin) addCredits(powerGradeCost)   // refund on failure
+      toast('Gagal bikin kit — coba lagi', 'err')
+    }
+    setKitBaking(false)
+  }
+
   // CapCut: standard .cube format with CapCut suffix
   const downloadCapCut = () => {
     if (!lut) { toast('Bake LUT dulu', 'warn'); return }
@@ -1176,6 +1269,14 @@ ${seq(ptsB)}
               : <>💎 Precision Grade <span className="text-[8px] opacity-70">65³</span>{!isAdmin&&<span className="text-[8px] bg-a2/20 px-1.5 py-0.5 rounded-full">{powerGradeCost} kredit</span>}</>}
           </button>
 
+          {/* PowerGrade Node Kit — per-stage LUTs for a real DaVinci node tree */}
+          <button onClick={downloadPowerGradeKit} disabled={!nodes.length||kitBaking}
+            className="w-full py-2.5 rounded-xl text-[11px] font-bold border border-warn/40 bg-gradient-to-r from-warn/15 to-a2/10 text-warn hover:from-warn/25 transition-all disabled:opacity-30 flex items-center justify-center gap-1.5">
+            {kitBaking
+              ? <><span className="w-3 h-3 border-2 border-warn/30 border-t-warn rounded-full animate-spin"/>Baking kit...</>
+              : <>🎛 PowerGrade Kit <span className="text-[8px] opacity-70">node-by-node</span>{!isAdmin&&<span className="text-[8px] bg-warn/20 px-1.5 py-0.5 rounded-full">{powerGradeCost} kredit</span>}</>}
+          </button>
+
           {!lut&&!nodes.length ? (
             <div className="bg-s2 border border-dashed border-b2 rounded-xl p-3 text-center">
               <p className="text-[10px] text-t3 leading-relaxed">Match Colors → Bake LUT untuk export</p>
@@ -1608,6 +1709,14 @@ ${seq(ptsB)}
               <button onClick={downloadDaVinci} disabled={dvBaking}
                 className="w-full py-4 rounded-2xl text-sm font-bold border border-a2/40 bg-gradient-to-r from-a2/15 to-accent/10 text-a2 active:scale-[0.97] transition-all flex items-center justify-center gap-2 disabled:opacity-40">
                 {dvBaking ? <><span className="w-4 h-4 border-2 border-a2/30 border-t-a2 rounded-full animate-spin"/>Baking Precision 65³...</> : <>💎 Precision Grade — 65³ Ultra{!isAdmin&&<span className="text-[10px] bg-a2/20 px-2 py-0.5 rounded-full">{powerGradeCost} kredit</span>}</>}
+              </button>
+            )}
+
+            {/* PowerGrade Node Kit */}
+            {nodes.length>0&&(
+              <button onClick={downloadPowerGradeKit} disabled={kitBaking}
+                className="w-full py-4 rounded-2xl text-sm font-bold border border-warn/40 bg-gradient-to-r from-warn/15 to-a2/10 text-warn active:scale-[0.97] transition-all flex items-center justify-center gap-2 disabled:opacity-40">
+                {kitBaking ? <><span className="w-4 h-4 border-2 border-warn/30 border-t-warn rounded-full animate-spin"/>Baking kit...</> : <>🎛 PowerGrade Kit — node DaVinci{!isAdmin&&<span className="text-[10px] bg-warn/20 px-2 py-0.5 rounded-full">{powerGradeCost} kredit</span>}</>}
               </button>
             )}
 

@@ -773,6 +773,117 @@ export function getDenseLut(id: string | undefined): DenseLut | undefined {
   return id ? lutRegistry.get(id) : undefined
 }
 
+// ── PowerGrade Node Kit ──────────────────────────────────────────────────────
+// The v9 pipeline is staged internally (balance → look → tone). For DaVinci
+// users we expose those stages as SEPARATE LUTs so they can build a real node
+// tree (one LUT per serial node), tweak each stage independently, and save it
+// as an actual PowerGrade in their Gallery. Stage data is registered alongside
+// the dense LUT under the same id.
+interface StagePack { cmap: ClusterMap; cast?: ToneCast; tone?: Float32Array; wb: WBPair; skin: SkinLayer }
+const stageRegistry = new Map<string, StagePack>()
+function registerStages(id: string, s: StagePack) {
+  stageRegistry.set(id, s)
+  if (stageRegistry.size > 20) stageRegistry.delete(stageRegistry.keys().next().value as string)
+}
+export function hasStages(id: string | undefined): boolean { return !!(id && stageRegistry.has(id)) }
+
+export interface NodeKit { balance?: Float32Array; look: Float32Array; tone: Float32Array; size: number }
+
+// Bake the per-node LUTs. Serial composition (balance → look → tone) closely
+// matches the integrated dense LUT — not bit-identical (stage quantization,
+// per-stage gamut handling) but that's the point: each node stays adjustable.
+export function bakeNodeKit(id: string | undefined, size = 33): NodeKit | null {
+  const st = id ? stageRegistry.get(id) : undefined
+  if (!st) return null
+  const { cmap, cast, tone, wb, skin: sk } = st
+  const N = size
+  const hasBal = Math.hypot(wb.fa, wb.fb) > 0.003
+  const bal = hasBal ? new Float32Array(N * N * N * 3) : undefined
+  const look = new Float32Array(N * N * N * 3)
+  const toneL = new Float32Array(N * N * N * 3)
+  let li = 0
+  for (let bi = 0; bi < N; bi++) for (let gi = 0; gi < N; gi++) for (let ri = 0; ri < N; ri++) {
+    const r0 = ri / (N - 1), g0 = gi / (N - 1), b0 = bi / (N - 1)
+    const [oL, oA, oB] = srgbToOklab(r0, g0, b0)
+
+    // ── 01 BALANCE — remove the footage's illuminant cast only ──
+    // (small ab shift: per-channel clamp, chroma pull-back would wash punch)
+    if (bal) {
+      const [br, bg, bb] = oklabToSrgb(oL, oA - wb.fa, oB - wb.fb)
+      bal[li] = clamp01(br); bal[li + 1] = clamp01(bg); bal[li + 2] = clamp01(bb)
+    }
+
+    // ── 02 LOOK — input assumed balanced; colour + skin + guards (no tone) ──
+    // (kept in sync with bakeDenseFromClusters — same maths, staged)
+    {
+      let [nA, nB] = applyClusterColor(oL, oA, oB, cmap)
+      if (cast) {
+        const [ca, cb] = sampleCast(cast, oL)
+        let cs = 0.75
+        if (oL > 0.85) cs *= Math.max(0, 1 - (oL - 0.85) / 0.13)
+        nA += ca * cs; nB += cb * cs
+      }
+      nA += wb.ra; nB += wb.rb
+      let nL = oL
+      const aA = oA + wb.ra, aB = oB + wb.rb
+      const C0 = Math.hypot(aA, aB), Cn = Math.hypot(nA, nB)
+      if (C0 > 0.015 && Cn > 1e-5) {
+        let h0 = Math.atan2(aB, aA); if (h0 < 0) h0 += TAU
+        let hn = Math.atan2(nB, nA)
+        let Cf = Cn
+        const sw = softSkin(oL, oA, oB) * sk.skinW
+        if (sw > 0.001) {
+          const lSkin = nL + sk.skinL
+          let hWanted = hn
+          if (sk.skinP === 0 && sk.skinH !== 0) hWanted = hn + angDiff(h0 + sk.skinH, hn) * 0.55
+          let dH = angDiff(hWanted, h0)
+          const SW_CAP = 0.32
+          if (dH >  SW_CAP) dH = SW_CAP + (dH - SW_CAP) * 0.2
+          if (dH < -SW_CAP) dH = -SW_CAP + (dH + SW_CAP) * 0.2
+          const hSkin = h0 + dH
+          const cBand = sk.skinP === 0 ? C0 * sk.skinS : Cf
+          let cSkin = Cf + (cBand - Cf) * 0.5
+          const cLo = C0 * 0.70, cHi = C0 * 1.08
+          if (cSkin < cLo) cSkin = cLo
+          if (cSkin > cHi) cSkin = cHi
+          hn = hn + angDiff(hSkin, hn) * sw
+          Cf = Cf + (cSkin - Cf) * sw
+          nL = nL + (lSkin - nL) * sw
+        }
+        const capW = C0 >= 0.06 ? 1 : C0 <= 0.025 ? 0 : (() => { const t = (C0 - 0.025) / 0.035; return t * t * (3 - 2 * t) })()
+        if (capW > 0.05) {
+          const lim = HUE_CAP / capW
+          const dH = angDiff(hn, h0)
+          if (dH >  lim) hn = h0 + lim + (dH - lim) * 0.25
+          if (dH < -lim) hn = h0 - lim + (dH + lim) * 0.25
+        }
+        if (sw < 0.5) { const cFloor = C0 * 0.72; if (Cf < cFloor) Cf = cFloor }
+        const Cmax = C0 * 1.85 + 0.045
+        if (Cf > Cmax) Cf = Cmax + (Cf - Cmax) * 0.25
+        if (Cf > 0.34) Cf = 0.34
+        nA = Cf * Math.cos(hn); nB = Cf * Math.sin(hn)
+      } else {
+        const Cmax = C0 * 1.85 + 0.045
+        if (Cn > Cmax) { const k = (Cmax + (Cn - Cmax) * 0.25) / Cn; nA *= k; nB *= k }
+      }
+      const [lr, lg, lb] = oklabToSrgbGamut(nL, nA, nB)
+      look[li] = lr; look[li + 1] = lg; look[li + 2] = lb
+    }
+
+    // ── 03 TONE — Smart Tone luminance curve only (colour untouched) ──
+    // per-channel clip like film: lifting L of an at-gamut-edge colour must
+    // CLIP (stay punchy, matching the integrated LUT), not desaturate
+    {
+      const nL = tone ? sampleCurve(tone, oL) : oL
+      const [tr, tg, tb] = oklabToSrgb(nL, oA, oB)
+      toneL[li] = clamp01(tr); toneL[li + 1] = clamp01(tg); toneL[li + 2] = clamp01(tb)
+    }
+    li += 3
+  }
+  smoothLut3D(look, N, 0.12)   // cluster warp needs the same anti-banding pass
+  return { balance: bal, look, tone: toneL, size: N }
+}
+
 // trilinear sample of an RGB-domain dense LUT
 function trilinear(d: DenseLut, r: number, g: number, b: number): [number, number, number] {
   const N = d.size, L = d.lut, s = N - 1
@@ -1212,6 +1323,8 @@ export function computeSmartMatch(foot: ImageData, ref: ImageData): SmartMatchRe
       denseLut = { lut, size: N }
       lutSize = N
       lutId = registerDenseLut(lut, N)
+      // stage data for the PowerGrade Node Kit (per-node LUT export)
+      registerStages(lutId, { cmap, cast, tone, wb: { fa: fwa, fb: fwb, ra: rwa, rb: rwb }, skin })
     }
   }
 
